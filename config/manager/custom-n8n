@@ -1,0 +1,9 @@
+#!/bin/sh
+# custom-n8n integration: relay the alert JSON to the n8n webhook.
+# /var/ossec/integrations/custom-n8n <alert_file>
+ALERT_FILE="$1"
+[ -z "$ALERT_FILE" ] && exit 1
+curl -s -X POST -H "Content-Type: application/json" \
+  --data-binary @${ALERT_FILE} \
+  http://n8n:5678/webhook/soc-alert
+exit 0

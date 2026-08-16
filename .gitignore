@@ -1,0 +1,13 @@
+# Secrets / local config
+.env
+config/wazuh_indexer_ssl_certs/
+config/wazuh_cluster/
+
+# OS / Docker
+node_modules/
+*.log
+.DS_Store
+
+# n8n runtime data dir (credentials) — but KEEP the workflow definition tracked:
+n8n/workflows/*.json
+!n8n/workflows/always-enrich.json

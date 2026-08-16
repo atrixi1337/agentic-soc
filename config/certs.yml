@@ -1,0 +1,31 @@
+# Certs generator config for Wazuh single-node (v4.9.0).
+# Run once via: docker compose -f generate-certs.yml up  (see bootstrap.sh)
+nodes:
+  indexer:
+    - name: wazuh.indexer
+      ip:
+        - 127.0.0.1
+        - wazuh.indexer
+      role: indexer
+  manager:
+    - name: wazuh.manager
+      ip:
+        - 127.0.0.1
+        - wazuh.manager
+      role:
+        - master
+        - worker
+  dashboard:
+    - name: wazuh.dashboard
+      ip:
+        - 127.0.0.1
+        - wazuh.dashboard
+      role:
+        - dashboard
+  filebeat:
+    - name: wazuh.manager
+      ip:
+        - 127.0.0.1
+        - wazuh.manager
+      role:
+        - filebeat

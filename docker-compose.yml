@@ -1,0 +1,174 @@
+# Agentic SOC — all-Docker, Linux, open-source EDR + n8n "Always-Enrich" pipeline.
+#
+# Architecture:
+#   linux-endpoint (Wazuh agent + auditd + Falco)  --1514/1515-->  wazuh.manager
+#   wazuh.manager --custom-n8n integration (level>=10)-->  n8n:5678/webhook
+#   n8n: Extract IOCs -> Timeline -> VirusTotal -> Merge -> Tier-3 LLM -> Score -> Switch -> Write case to wazuh.indexer:9200 (agentic-soc-cases)
+#
+# Everything talks by service name on the `soc` network (no hardcoded IPs) so the
+# whole lab is portable across PCs. Secrets come from .env (gitignored).
+
+networks:
+  soc:
+    driver: bridge
+
+volumes:
+  wazuh_api_configuration:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_agentless:
+  wazuh_wodles:
+  filebeat_etc:
+  filebeat_var:
+  wazuh-indexer-data:
+  wazuh-dashboard-config:
+  wazuh-dashboard-custom:
+  n8n_data:
+  endpoint_agent_data:
+
+services:
+  # ── Wazuh single-node (manager + indexer + dashboard) ──────────────────────
+  wazuh.indexer:
+    image: wazuh/wazuh-indexer:4.9.0
+    hostname: wazuh.indexer
+    restart: always
+    networks: [soc]
+    ports:
+      - "9200:9200"
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-indexer/certs/root-ca.pem
+      - ./config/wazuh_indexer_ssl_certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.key
+      - ./config/wazuh_indexer_ssl_certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.pem
+      - ./config/wazuh_indexer_ssl_certs/admin.pem:/usr/share/wazuh-indexer/certs/admin.pem
+      - ./config/wazuh_indexer_ssl_certs/admin-key.pem:/usr/share/wazuh-indexer/certs/admin-key.pem
+      - ./config/wazuh_indexer/wazuh.indexer.yml:/usr/share/wazuh-indexer/opensearch.yml
+      - ./config/wazuh_indexer/internal_users.yml:/usr/share/wazuh-indexer/opensearch-security/internal_users.yml
+
+  wazuh.manager:
+    image: wazuh/wazuh-manager:4.9.0
+    hostname: wazuh.manager
+    restart: always
+    networks: [soc]
+    ports:
+      - "1514:1514"
+      - "1515:1515"
+      - "514:514/udp"
+      - "55000:55000"
+    environment:
+      - INDEXER_URL=https://wazuh.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${INDEXER_PASSWORD:-SecretPassword}
+      - FILEBEAT_SSL_VERIFICATION_MODE=full
+      - SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem
+      - SSL_CERTIFICATE=/etc/ssl/filebeat.pem
+      - SSL_KEY=/etc/ssl/filebeat.key
+      - API_USERNAME=${WAZUH_API_USER:-wazuh-wui}
+      - API_PASSWORD=${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
+    volumes:
+      - wazuh_api_configuration:/var/ossec/api/configuration
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response/bin
+      - wazuh_agentless:/var/ossec/agentless
+      - wazuh_wodles:/var/ossec/wodles
+      - filebeat_etc:/etc/filebeat
+      - filebeat_var:/var/lib/filebeat
+      - ./config/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem
+      - ./config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem
+      - ./config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key
+      # Persistent manager config (ossec.conf + local_rules.xml) via bind mount
+      - ./config/manager/ossec.conf:/wazuh-config-mount/etc/ossec.conf
+      - ./config/manager/local_rules.xml:/var/ossec/etc/rules/local_rules.xml
+      - ./config/manager/custom-n8n:/var/ossec/integrations/custom-n8n
+      - ./config/manager/soc-quarantine.sh:/var/ossec/active-response/bin/soc-quarantine.sh
+    depends_on:
+      - wazuh.indexer
+
+  wazuh.dashboard:
+    image: wazuh/wazuh-dashboard:4.9.0
+    hostname: wazuh.dashboard
+    restart: always
+    networks: [soc]
+    ports:
+      - "443:5601"
+    environment:
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${INDEXER_PASSWORD:-SecretPassword}
+      - WAZUH_API_URL=https://wazuh.manager
+      - DASHBOARD_USERNAME=kibanaserver
+      - DASHBOARD_PASSWORD=kibanaserver
+      - API_USERNAME=${WAZUH_API_USER:-wazuh-wui}
+      - API_PASSWORD=${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
+    volumes:
+      - ./config/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem
+      - ./config/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem
+      - ./config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem
+      - ./config/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml
+      - ./config/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml
+      - wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
+      - wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
+    depends_on:
+      - wazuh.indexer
+      - wazuh.manager
+
+  # ── n8n orchestration (the "Always-Enrich" pipeline) ───────────────────────
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    hostname: n8n
+    restart: always
+    networks: [soc]
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-changeme-super-secret-encryption-key}
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=http://n8n:5678
+      - GENERIC_TIMEZONE=UTC
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/home/node/.n8n/workflows_import
+    depends_on:
+      - wazuh.manager
+
+  # ── Linux endpoint (the "victim" / EDR source) ────────────────────────────
+  linux-endpoint:
+    build:
+      context: ./endpoint
+    hostname: soc-endpoint
+    privileged: true            # required for auditd + Falco kernel hooks
+    restart: always
+    networks: [soc]
+    environment:
+      - WAIT_FOR_MANAGER=true
+    volumes:
+      - endpoint_agent_data:/var/ossec
+    depends_on:
+      - wazuh.manager
+
+  # ── Falco (behavioral runtime detection; forwards to Wazuh via shipper) ────
+  falco:
+    image: falcosecurity/falco:latest
+    privileged: true
+    restart: always
+    networks: [soc]
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./config/falco/falco_rules.local.yaml:/etc/falco/falco_rules.local.yaml
+      - ./config/falco/falcoctl.yml:/etc/falco/falcoctl.yml
+    command: ["-o", "falco.webserver.listen_address=0.0.0.0:8765"]
+    depends_on:
+      - wazuh.manager

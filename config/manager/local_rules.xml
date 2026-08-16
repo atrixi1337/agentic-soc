@@ -1,0 +1,56 @@
+<!-- local_rules.xml — Agentic SOC Linux EDR detection rules.
+     Mirrors the Windows/Sysmon intent from the original spec, ported to Linux telemetry
+     (auditd, syscheck/FIM, command monitoring, Falco). All map to level>=10 so they
+     trigger the n8n "Always-Enrich" pipeline. -->
+<group name="agentic_soc,linux,edr">
+  <!-- 100012: FIM — a file with a hash appeared in a watched dir (Linux analog of Sysmon EID 15) -->
+  <rule id="100012" level="10">
+    <if_sid>554</if_sid>
+    <field name="win.system" negate="yes">.*</field>
+    <description>File added/modified under monitored path (FIM) — hash captured.</description>
+    <group>fim,policy_violation,</group>
+  </rule>
+
+  <!-- 100013: Suspicious command line (Linux analog of Sysmon EID 1 / certutil|iex) -->
+  <rule id="100013" level="10">
+    <decoded_as>auditd</decoded_as>
+    <field name="type">execve</field>
+    <field name="auditd.data.syscall" type="pcre2">(?i)(curl|wget|nc|bash|sh|python3?|perl|ruby|php|base64)</field>
+    <description>Suspicious command executed: downloader/interpreter pattern.</description>
+    <group>suspicious_command,</group>
+  </rule>
+
+  <!-- 100014: Credential access — memory read of a sensitive process (LSASS analog) -->
+  <rule id="100014" level="12">
+    <decoded_as>auditd</decoded_as>
+    <field name="type">execve</field>
+    <field name="auditd.data.exe" type="pcre2">(?i)(gcore|procdump|/proc/.*/mem)</field>
+    <description>Possible credential dumping — process memory access attempt.</description>
+    <group>credential_access,</group>
+  </rule>
+
+  <!-- 100015: Download piped to shell (curl|sh / wget -O- | bash) -->
+  <rule id="100015" level="12">
+    <decoded_as>auditd</decoded_as>
+    <field name="type">execve</field>
+    <field name="auditd.data.name" type="pcre2">(?i)(curl\s+.*\|\s*(ba)?sh|wget\s+.*\|\s*(ba)?sh|curl.*-s.*\|.*sh)</field>
+    <description>Remote script download piped to shell — likely malware delivery.</description>
+    <group>suspicious_command,malware,</group>
+  </rule>
+
+  <!-- 100020: Falco behavioral — shell spawned in unexpected container / privilege change -->
+  <rule id="100020" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="source">falco</field>
+    <description>Falco behavioral alert forwarded from runtime detector.</description>
+    <group>falco,container,</group>
+  </rule>
+
+  <!-- 100030: EICAR test string detected by FIM/syscheck -->
+  <rule id="100030" level="10">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">(?i)eicar</field>
+    <description>Possible EICAR test string written to disk.</description>
+    <group>test,malware,</group>
+  </rule>
+</group>

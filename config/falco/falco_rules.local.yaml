@@ -1,0 +1,34 @@
+# Falco local rules — behavioral runtime detection for the endpoint container.
+# Alerts are shipped to Wazuh (via the manager's Falco log source / filebeat-like
+# ingestion) and mapped to rule 100020 in local_rules.xml.
+rules:
+  - macro: soc_interesting_binaries
+    condition: (proc.name in (curl, wget, nc, base64, python, perl, ruby, php, bash, sh))
+
+  - rule: SocRemoteScriptToShell
+    desc: Download piped to shell (curl|sh) — malware delivery pattern
+    condition: (evt.type=execve and (proc.args contains "curl" and proc.args contains "sh") or (proc.args contains "wget" and proc.args contains "sh"))
+    output: "Suspicious download-to-shell on %evt.host (user=%user.name cmd=%proc.cmdline)"
+    priority: CRITICAL
+    tags: [soc, malware]
+
+  - rule: SocShellInContainer
+    desc: Shell spawned inside a container unexpectedly
+    condition: (container.id != "" and proc.name in (bash, sh, zsh) and not proc.parent.name in (entrypoint, docker-entrypoint))
+    output: "Unexpected shell in container %container.name (cmd=%proc.cmdline)"
+    priority: WARNING
+    tags: [soc, container]
+
+  - rule: SocSensitiveFileRead
+    desc: Read of /etc/shadow or ssh private keys
+    condition: (fd.name startswith /etc/shadow or fd.name startswith /root/.ssh) and (evt.type=open or evt.type=openat)
+    output: "Sensitive file access %fd.name by %proc.name (user=%user.name)"
+    priority: WARNING
+    tags: [soc, credential_access]
+
+  - rule: SocOutboundConnection
+    desc: Outbound network connection from a shell
+    condition: (evt.type=connect and proc.name in (bash, sh, python, perl) and not fd.sip="127.0.0.1")
+    output: "Outbound connection %fd.sip:%fd.sport from %proc.name"
+    priority: NOTICE
+    tags: [soc, network]

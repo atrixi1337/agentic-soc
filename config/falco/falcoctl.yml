@@ -1,0 +1,10 @@
+# falcoctl config — minimal; relies on default rules + falco_rules.local.yaml.
+falco:
+  log:
+    level: info
+  grpc:
+    enabled: false
+  webserver:
+    enabled: true
+    listen_address: 0.0.0.0
+    listen_port: 8765
