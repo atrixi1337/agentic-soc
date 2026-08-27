@@ -1,31 +1,28 @@
 # Certs generator config for Wazuh single-node (v4.9.0).
+# Mirrors the official wazuh-docker v4.9.0 single-node/config/certs.yml.
 # Run once via: docker compose -f generate-certs.yml up  (see bootstrap.sh)
+#
+# KEY POINTS (learned the hard way):
+#   - `ip` is a single value -> the Docker service DNS name (wazuh.indexer,
+#     wazuh.manager, wazuh.dashboard). It becomes a SAN so certs validate over
+#     the compose network. Do NOT use a list (generator errors) and do NOT use
+#     127.0.0.1 only (then the service-name SAN is weaker).
+#   - Use `server:` (NOT `manager:`) and do NOT add a `filebeat` node. Two nodes
+#     sharing the name `wazuh.manager` collide and the manager cert is skipped;
+#     the manager's Filebeat reuses the wazuh.manager cert, which is what the
+#     official single-node compose mounts at /etc/ssl/filebeat.*.
 nodes:
+  # Wazuh indexer server nodes
   indexer:
     - name: wazuh.indexer
-      ip:
-        - 127.0.0.1
-        - wazuh.indexer
-      role: indexer
-  manager:
+      ip: wazuh.indexer
+
+  # Wazuh server nodes
+  server:
     - name: wazuh.manager
-      ip:
-        - 127.0.0.1
-        - wazuh.manager
-      role:
-        - master
-        - worker
+      ip: wazuh.manager
+
+  # Wazuh dashboard node
   dashboard:
     - name: wazuh.dashboard
-      ip:
-        - 127.0.0.1
-        - wazuh.dashboard
-      role:
-        - dashboard
-  filebeat:
-    - name: wazuh.manager
-      ip:
-        - 127.0.0.1
-        - wazuh.manager
-      role:
-        - filebeat
+      ip: wazuh.dashboard

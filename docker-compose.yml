@@ -92,8 +92,16 @@ services:
       # Persistent manager config (ossec.conf + local_rules.xml) via bind mount
       - ./config/manager/ossec.conf:/wazuh-config-mount/etc/ossec.conf
       - ./config/manager/local_rules.xml:/var/ossec/etc/rules/local_rules.xml
+      # ar.conf: active-response shared config. The manager auto-generates this
+      # only when NO custom ossec.conf is mounted; with a mounted config the
+      # seeding step is skipped, so we supply it explicitly.
+      - ./config/manager/ar.conf:/var/ossec/etc/shared/ar.conf
       - ./config/manager/custom-n8n:/var/ossec/integrations/custom-n8n
       - ./config/manager/soc-quarantine.sh:/var/ossec/active-response/bin/soc-quarantine.sh
+      # Patch wazuh-control: drop the legacy `wazuh-dbd` daemon whose `-t` test
+      # aborts with a glibc assertion on kernel 6.8+/7.x (deprecated; real DB is
+      # `wazuh-db`). Without this the manager container never starts.
+      - ./config/manager/patches/wazuh-control:/var/ossec/bin/wazuh-control
     depends_on:
       - wazuh.indexer
 

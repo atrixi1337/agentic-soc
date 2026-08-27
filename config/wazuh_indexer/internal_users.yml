@@ -1,10 +1,10 @@
 # Wazuh indexer internal_users.yml (default admin user).
-# Passwords are injected at runtime via env / bootstrap; this is the seed doc.
+# Password: SecretPassword (hash regenerated to match INDEXER_PASSWORD default).
 _meta:
   type: internalusers
   config_version: 2
 admin:
-  hash: "$2y$12$ihAibQLW8rvTE/ks.Q4sUe2oOBRnRAVYzXtWSzdwK9tW3o3/.pG8K"
+  hash: "$2y$12$Z213HjHmco5O2SFC7HeDBeBzpmwddr0WHQ9RWnFBlbwmU0q3On82m"
   reserved: true
   backend_roles:
     - "admin"

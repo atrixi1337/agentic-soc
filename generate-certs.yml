@@ -1,6 +1,7 @@
 # Certs generator — run once to create Wazuh TLS material under
 # config/wazuh_indexer_ssl_certs/. Invoked by bootstrap.sh.
-version: '3'
+# The official Wazuh generator writes to /certificates/ inside the container by
+# default, so the host bind-mount targets that exact path (NOT /wazuh-certificates/).
 services:
   generator:
     image: wazuh/wazuh-certs-generator:0.0.2
