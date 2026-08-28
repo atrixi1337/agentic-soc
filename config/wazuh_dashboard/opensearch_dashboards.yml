@@ -1,0 +1,18 @@
+# OpenSearch Dashboards (Wazuh dashboard) config — v4.9.0.
+# Mirrors the official single-node opensearch_dashboards.yml. Hostname-based
+# URLs use the compose service DNS name (wazuh.indexer) so the dashboard
+# reaches the stack over the `soc` network without hardcoded IPs.
+#
+# NOTE: the Wazuh *app* API connection (manager URL + creds) lives in the
+# separate wazuh.yml (mounted at .../data/wazuh/config/wazuh.yml) — do NOT put
+# `wazuh.app.*` here. Also do NOT set `opensearch.requestHeadersAllowlist` /
+# `visdefaultIndex` — both crash or 503 the dashboard in 4.9.0.
+server.host: 0.0.0.0
+server.port: 5601
+
+opensearch.hosts:
+  - https://wazuh.indexer:9200
+opensearch.ssl.verificationMode: none
+opensearch.ssl.certificateAuthorities: /usr/share/wazuh-dashboard/certs/root-ca.pem
+opensearch.username: admin
+opensearch.password: ${INDEXER_PASSWORD:-SecretPassword}

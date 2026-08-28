@@ -1,0 +1,146 @@
+{
+  "name": "Agentic SOC - Always-Enrich",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "soc-alert",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Wazuh Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "soc-alert"
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $input.item.json;\nconst data = a.data || a.alert || a;\nconst out = { agent_id: data.agent?.id || data.agent_id, hashes: [], urls: [], ips: [], command: null, filepath: null };\nconst hashes = data.syscheck?.hash || data.hash || {};\nif (hashes && hashes.sha256) out.hashes.push(hashes.sha256);\nif (data.syscheck?.path) out.filepath = data.syscheck.path;\nconst cmd = data.data?.auditd?.data?.command || data.command || (data.data && data.data.command);\nif (cmd) out.command = cmd;\nconst ip = data.data?.srcip || data.srcip;\nif (ip) out.ips.push(ip);\nconst url = (cmd || '').match(/https?:\\/\\/[^\\s\"']+/);\nif (url) out.urls.push(url[0]);\nreturn [{ json: { ...out, _raw: a } }];"
+      },
+      "name": "Extract IOCs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://wazuh.indexer:9200/wazuh-alerts-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"size\": 50,\n  \"query\": { \"bool\": { \"must\": [ { \"term\": { \"agent.id\": \"{{ $json.agent_id }}\" } }, { \"range\": { \"@timestamp\": { \"gte\": \"now-1h\" } } } ] } }\n}",
+        "options": { "skipSslCertificateValidation": true }
+      },
+      "name": "Get Wazuh Timeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [710, 300],
+      "credentials": { "httpHeaderAuth": { "id": "wazuh-indexer", "name": "Wazuh Indexer (admin)" } }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.virustotal.com/api/v3/files/{{ $json.hashes[0] }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "x-apikey", "value": "={{ $env.VT_API_KEY }}" } ] },
+        "options": { "skipSslCertificateValidation": true, "timeout": 20000 }
+      },
+      "name": "VirusTotal Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const iocs = $('Extract IOCs').first().json;\nconst timeline = $('Get Wazuh Timeline').first().json?.hits?.hits || [];\nconst vt = $('VirusTotal Lookup').first().json || {};\nconst vtStats = vt?.data?.attributes?.last_analysis_stats || {};\nreturn [{ json: {\n  agent_id: iocs.agent_id,\n  hashes: iocs.hashes,\n  urls: iocs.urls,\n  ips: iocs.ips,\n  command: iocs.command,\n  filepath: iocs.filepath,\n  timeline_count: timeline.length,\n  timeline: timeline.map(t => t._source).slice(0,10),\n  vt_stats: vtStats\n} }];"
+      },
+      "name": "Merge Intel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1170, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.OPENROUTER_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": {
+          "model": "={{ $env.OPENROUTER_MODEL }}",
+          "temperature": 0.2,
+          "messages": [
+            { "role": "system", "content": "You are a senior Tier-3 SOC analyst. Given a Linux endpoint alert + IOCs + timeline + VirusTotal stats, return STRICT JSON with: verdict (one of Malicious/Suspicious/Benign), malware_family (string or null), mitre_techniques (array of technique IDs), behavior_summary (string), yara_rule (valid YARA string or empty). Be precise, cite evidence." },
+            { "role": "user", "content": "=ALERT: {{ JSON.stringify($json) }}" }
+          ]
+        },
+        "options": { "skipSslCertificateValidation": true }
+      },
+      "name": "Tier-3 Analyst Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ai = $('Tier-3 Analyst Agent').first().json;\nlet parsed; try { parsed = JSON.parse(ai.choices[0].message.content); } catch(e) { parsed = { verdict: 'Benign', malware_family: null, mitre_techniques: [], behavior_summary: 'AI parse failed', yara_rule: '' }; }\nconst score = parsed.verdict === 'Malicious' ? 60 : parsed.verdict === 'Suspicious' ? 30 : 0;\nreturn [{ json: {\n  timestamp: new Date().toISOString(),\n  agent_id: $('Merge Intel').first().json.agent_id,\n  tier3_verdict: parsed.verdict,\n  malware_family: parsed.malware_family,\n  mitre_techniques: parsed.mitre_techniques,\n  behavior_summary: parsed.behavior_summary,\n  yara_rule: parsed.yara_rule,\n  final_score: score,\n  case_status: score >= 60 ? 'critical' : score >= 30 ? 'forensic' : 'closed'\n} }];"
+      },
+      "name": "Parse & Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1630, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://wazuh.indexer:9200/agentic-soc-cases/_doc",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": { "skipSslCertificateValidation": true }
+      },
+      "name": "Write Case (Wazuh Index)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1860, 300],
+      "credentials": { "httpHeaderAuth": { "id": "wazuh-indexer", "name": "Wazuh Indexer (admin)" } }
+    }
+  ],
+  "connections": {
+    "Wazuh Webhook": { "main": [ [ { "node": "Extract IOCs", "type": "main", "index": 0 } ] ] },
+    "Extract IOCs": { "main": [ [ { "node": "Get Wazuh Timeline", "type": "main", "index": 0 } ] ] },
+    "Get Wazuh Timeline": { "main": [ [ { "node": "VirusTotal Lookup", "type": "main", "index": 0 } ] ] },
+    "VirusTotal Lookup": { "main": [ [ { "node": "Merge Intel", "type": "main", "index": 0 } ] ] },
+    "Merge Intel": { "main": [ [ { "node": "Tier-3 Analyst Agent", "type": "main", "index": 0 } ] ] },
+    "Tier-3 Analyst Agent": { "main": [ [ { "node": "Parse & Score", "type": "main", "index": 0 } ] ] },
+    "Parse & Score": { "main": [ [ { "node": "Write Case (Wazuh Index)", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": {},
+  "versionId": 1,
+  "pinData": {},
+  "staticData": null
+}

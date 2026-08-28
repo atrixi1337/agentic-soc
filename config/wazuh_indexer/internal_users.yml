@@ -1,0 +1,11 @@
+# Wazuh indexer internal_users.yml (default admin user).
+# Password: SecretPassword (hash regenerated to match INDEXER_PASSWORD default).
+_meta:
+  type: internalusers
+  config_version: 2
+admin:
+  hash: "$2y$12$Z213HjHmco5O2SFC7HeDBeBzpmwddr0WHQ9RWnFBlbwmU0q3On82m"
+  reserved: true
+  backend_roles:
+    - "admin"
+  description: "Admin user"
