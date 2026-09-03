@@ -1,0 +1,14 @@
+{
+  "default_vm": "SOC-Victim",
+  "vm_user": "victim",
+  "_vm_password_note": "Set vm_password in a local bridge.json (gitignored) or via env var. Default for lab: see HANDOFF-ADDENDUM-v3.1.md",
+  "intake_webhook": "http://192.168.10.101:5678/webhook/yarakin-sample-intake",
+  "fetch_dir": "/home/dev/soc-lab/samples-fetched",
+  "max_bytes": 10485760,
+  "port": 8765,
+  "wazuh_api": "https://192.168.10.101:55000",
+  "_wazuh_basic_note": "Set wazuh_basic to base64(user:pass). Generate with: echo -n 'user:pass' | base64",
+  "agent": "002",
+  "linux_agent_id": "010",
+  "linux_container": "soc-linux-test"
+}

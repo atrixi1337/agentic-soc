@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOC · Live</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2128;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --purple: #a371f7;
+  --malicious: #f85149;
+  --suspicious: #d29922;
+  --benign: #3fb950;
+  --unknown: #6e7681;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+.brand-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.brand-sub { color: var(--text-muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+.nav { display: flex; gap: 4px; }
+.nav a {
+  padding: 6px 12px; border-radius: 6px;
+  color: var(--text-muted); text-decoration: none;
+  font-size: 13px; font-weight: 500;
+  transition: all 0.15s;
+}
+.nav a:hover { color: var(--text); background: var(--surface-2); }
+.nav a.active { color: var(--accent); background: rgba(88,166,255,0.1); }
+.health { display: flex; gap: 16px; font-size: 12px; color: var(--text-muted); }
+.health-item { display: flex; align-items: center; gap: 5px; }
+.health-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.health-dot.down { background: var(--red); }
+.health-dot.warn { background: var(--yellow); }
+
+.stats {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 1px; background: var(--border);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.stat { background: var(--surface); padding: 14px 20px; }
+.stat-value { font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }
+.stat-value.malicious { color: var(--malicious); }
+.stat-value.suspicious { color: var(--suspicious); }
+.stat-value.benign { color: var(--benign); }
+.stat-value.unknown { color: var(--unknown); }
+.stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+.workspace { flex: 1; display: grid; grid-template-columns: 1fr 320px; overflow: hidden; }
+.main-col { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); }
+.activity-col { display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
+
+.filters {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 24px; background: var(--surface);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.filter-chip {
+  padding: 4px 12px; border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-muted); cursor: pointer;
+  transition: all 0.15s;
+}
+.filter-chip:hover { border-color: var(--text-muted); color: var(--text); }
+.filter-chip.active {
+  background: rgba(88,166,255,0.15);
+  border-color: var(--accent); color: var(--accent);
+}
+.filter-chip .count { margin-left: 6px; font-weight: 400; opacity: 0.7; }
+.search {
+  margin-left: auto; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 10px; color: var(--text);
+  font-size: 12px; width: 200px; outline: none;
+}
+.search:focus { border-color: var(--accent); }
+.search::placeholder { color: var(--text-muted); }
+
+main { flex: 1; overflow-y: auto; padding: 16px 24px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 3px solid var(--unknown);
+  border-radius: 8px; padding: 14px 16px;
+  cursor: pointer; transition: all 0.15s; position: relative;
+}
+.card:hover { border-color: var(--text-muted); background: var(--surface-2); transform: translateY(-1px); }
+.card[data-verdict="Malicious"] { border-left-color: var(--malicious); }
+.card[data-verdict="Suspicious"] { border-left-color: var(--suspicious); }
+.card[data-verdict="Benign"] { border-left-color: var(--benign); }
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.card-title { font-size: 14px; font-weight: 600; line-height: 1.3; flex: 1; margin-right: 10px; }
+.card-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
+.alert-id { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; color: var(--text-muted); }
+.verdict-badge {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; padding: 2px 6px; border-radius: 4px;
+}
+.verdict-badge.Malicious { background: rgba(248,81,73,0.15); color: var(--malicious); }
+.verdict-badge.Suspicious { background: rgba(210,153,34,0.15); color: var(--suspicious); }
+.verdict-badge.Benign { background: rgba(63,185,80,0.15); color: var(--benign); }
+.verdict-badge.UNKNOWN { background: rgba(110,118,129,0.15); color: var(--unknown); }
+.card-body { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.card-row { display: flex; align-items: center; gap: 8px; }
+.card-row .key { font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; min-width: 50px; opacity: 0.7; }
+.card-row .val { color: var(--text); font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.score-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.score-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+.score-bar-fill.high { background: var(--malicious); }
+.score-bar-fill.mid { background: var(--suspicious); }
+.score-bar-fill.low { background: var(--benign); }
+
+.activity-header {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-muted); display: flex;
+  justify-content: space-between; align-items: center; flex-shrink: 0;
+}
+.activity-header .live-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+  animation: pulse 1.5s infinite; margin-right: 6px;
+}
+.activity-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.activity-item {
+  padding: 8px 16px; border-left: 2px solid transparent;
+  cursor: pointer; transition: background 0.1s;
+}
+.activity-item:hover { background: var(--surface-2); }
+.activity-item.critical { border-left-color: var(--red); }
+.activity-item.warning { border-left-color: var(--yellow); }
+.activity-item.info { border-left-color: #58a6ff; }
+.activity-item.yarakin { border-left-color: var(--purple); }
+.activity-time { font-size: 10px; color: var(--text-muted); }
+.activity-msg { font-size: 12px; margin-top: 2px; line-height: 1.3; }
+
+.incidents-view { display: none; }
+.incidents-view.active { display: block; }
+.incident-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 4px solid var(--yellow);
+  border-radius: 8px; padding: 16px; margin-bottom: 12px;
+  cursor: pointer; transition: all 0.15s;
+}
+.incident-card:hover { border-color: var(--text-muted); background: var(--surface-2); }
+.incident-card[data-severity="critical"] { border-left-color: var(--red); }
+.incident-card[data-severity="high"] { border-left-color: var(--yellow); }
+.incident-card[data-severity="medium"] { border-left-color: #58a6ff; }
+.incident-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.incident-title { font-size: 15px; font-weight: 600; }
+.incident-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.kill-chain { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.mitre-tag {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px; padding: 2px 8px; border-radius: 3px;
+  background: rgba(88,166,255,0.1); color: var(--accent);
+  border: 1px solid rgba(88,166,255,0.2);
+}
+.severity-badge {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; padding: 3px 8px; border-radius: 4px;
+}
+.severity-badge.critical { background: rgba(248,81,73,0.15); color: var(--red); }
+.severity-badge.high { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.severity-badge.medium { background: rgba(88,166,255,0.15); color: var(--accent); }
+
+.empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.empty-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: none; }
+.overlay.show { display: block; }
+.detail {
+  position: fixed; top: 0; right: 0;
+  width: 50%; min-width: 500px; max-width: 800px;
+  height: 100%; background: var(--bg);
+  border-left: 1px solid var(--border); z-index: 101;
+  transform: translateX(100%); transition: transform 0.2s ease;
+  display: flex; flex-direction: column;
+}
+.detail.show { transform: translateX(0); }
+.detail-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.detail-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.close-btn {
+  background: none; border: 1px solid var(--border);
+  color: var(--text-muted); width: 28px; height: 28px;
+  border-radius: 6px; cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+.close-btn:hover { border-color: var(--text); color: var(--text); }
+.detail-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.section { margin-bottom: 20px; }
+.section h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-muted); margin-bottom: 8px; font-weight: 600;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+.kv { display: flex; flex-direction: column; gap: 2px; }
+.kv .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-muted); }
+.kv .v { font-size: 13px; color: var(--text); font-family: 'SF Mono', Menlo, Consolas, monospace; word-break: break-all; }
+pre {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--text);
+  white-space: pre-wrap; word-break: break-all;
+  max-height: 200px; overflow-y: auto;
+}
+.tag {
+  display: inline-block; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 2px 8px; font-size: 11px; color: var(--text);
+  margin: 0 4px 4px 0;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+.btn {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 12px;
+  border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;
+}
+.btn:hover { border-color: var(--text-muted); background: var(--surface-2); }
+.btn.primary { background: #1f6feb; border-color: var(--accent); color: white; }
+.btn.primary:hover { background: var(--accent); }
+.actions { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+
+.yarakin-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 3px solid var(--purple);
+  border-radius: 6px; padding: 12px; margin-top: 8px;
+}
+.yarakin-status { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.yarakin-status.completed { color: var(--purple); }
+.yarakin-status.timeout { color: var(--yellow); }
+.yarakin-family { font-size: 14px; font-weight: 600; color: var(--text); }
+.yarakin-verdict { font-size: 12px; color: var(--text-muted); }
+
+.related-case {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 4px;
+  margin-bottom: 4px; cursor: pointer; font-size: 12px;
+}
+.related-case:hover { border-color: var(--text-muted); }
+.related-case .alert-id { font-family: 'SF Mono', Menlo, Consolas, monospace; }
+.related-case .threat { color: var(--text); flex: 1; margin: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.timeline { position: relative; padding-left: 20px; border-left: 2px solid var(--border); }
+.timeline-item { position: relative; margin-bottom: 12px; font-size: 12px; }
+.timeline-icon { position: absolute; left: -28px; top: 0; width: 18px; text-align: center; }
+.timeline-time { color: var(--text-muted); font-size: 11px; }
+.timeline-detail { color: var(--text); margin-top: 2px; }
+
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  padding: 10px 16px; border-radius: 6px;
+  font-size: 12px; z-index: 200; display: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.toast.show { display: block; }
+.toast.ok { border-left-color: var(--green); }
+.toast.err { border-left-color: var(--red); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-dot"></span>
+    SOC Dashboard
+    <span class="brand-sub" id="agent-count">— agents</span>
+  </div>
+  <nav class="nav">
+    <a href="#" class="active" data-view="cases">Live</a>
+    <a href="#" data-view="incidents">Incidents</a>
+    <a href="/history.html">History</a>
+  </nav>
+  <div class="health" id="health-bar"></div>
+</header>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-value malicious" id="stat-malicious">0</div>
+    <div class="stat-label">Malicious</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value suspicious" id="stat-suspicious">0</div>
+    <div class="stat-label">Suspicious</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value benign" id="stat-benign">0</div>
+    <div class="stat-label">Benign</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value unknown" id="stat-total">0</div>
+    <div class="stat-label">Total</div>
+  </div>
+</div>
+
+<div class="workspace">
+  <div class="main-col">
+    <div class="filters" id="filters">
+      <button class="filter-chip active" data-filter="alerting">Alerting <span class="count" id="cnt-alerting">0</span></button>
+      <button class="filter-chip" data-filter="Malicious">Malicious <span class="count" id="cnt-malicious">0</span></button>
+      <button class="filter-chip" data-filter="Suspicious">Suspicious <span class="count" id="cnt-suspicious">0</span></button>
+      <button class="filter-chip" data-filter="Benign">Benign <span class="count" id="cnt-benign">0</span></button>
+      <button class="filter-chip" data-filter="all">All <span class="count" id="cnt-all">0</span></button>
+      <input class="search" type="text" id="search" placeholder="Search..." />
+    </div>
+    <main>
+      <div class="cards" id="cards"></div>
+      <div class="incidents-view" id="incidents-view"></div>
+      <div class="empty" id="empty" style="display:none">
+        <div class="empty-icon">🛡️</div>
+        <div>No cases match the current filter.</div>
+      </div>
+    </main>
+  </div>
+  <div class="activity-col">
+    <div class="activity-header">
+      <span><span class="live-dot"></span>Live Activity</span>
+      <span id="activity-count" style="font-size:10px;color:var(--text-muted)">0</span>
+    </div>
+    <div class="activity-list" id="activity-list"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="detail" id="detail">
+  <div class="detail-header">
+    <div class="detail-title" id="detail-title"></div>
+    <button class="close-btn" onclick="closeDetail()">×</button>
+  </div>
+  <div class="detail-body" id="detail-body"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+let activeView = 'cases';
+let activeFilter = 'alerting';
+let searchQuery = '';
+let allCases = [];
+let allIncidents = [];
+let activeAlertId = null;
+let ws = null;
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return Math.floor(diff) + 's ago';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+}
+
+function truncate(s, n) { if (!s) return ''; return s.length > n ? s.slice(0, n) + '…' : s; }
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+function showToast(msg, type) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (type || '');
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+async function fetchCases() {
+  try {
+    const r = await fetch('/api/cases?size=200');
+    const d = await r.json();
+    allCases = d.cases || [];
+    updateStats();
+    if (activeView === 'cases') renderCards();
+  } catch (e) { console.error('fetchCases:', e); }
+}
+
+async function fetchIncidents() {
+  try {
+    const r = await fetch('/api/incidents?size=500');
+    const d = await r.json();
+    allIncidents = d.incidents || [];
+    if (activeView === 'incidents') renderIncidents();
+  } catch (e) { console.error('fetchIncidents:', e); }
+}
+
+async function fetchActivity() {
+  try {
+    const r = await fetch('/api/activity?limit=40');
+    const d = await r.json();
+    renderActivity(d.events || []);
+    $('#activity-count').textContent = (d.total || 0) + ' events';
+  } catch (e) { console.error('fetchActivity:', e); }
+}
+
+async function fetchHealth() {
+  try {
+    const r = await fetch('/api/health');
+    const d = await r.json();
+    const bar = $('#health-bar');
+    bar.innerHTML = '';
+    for (const [name, status] of Object.entries(d)) {
+      if (typeof status === 'object' && status) {
+        const dotClass = status.reachable ? '' : 'down';
+        bar.innerHTML += `<div class="health-item"><span class="health-dot ${dotClass}"></span>${name}</div>`;
+      }
+    }
+    if (d.agents_count !== undefined) {
+      $('#agent-count').textContent = `${d.agents_count} agent${d.agents_count !== 1 ? 's' : ''}`;
+    }
+  } catch (e) {}
+}
+
+function updateStats() {
+  const counts = { Malicious: 0, Suspicious: 0, Benign: 0, total: allCases.length };
+  for (const c of allCases) {
+    const v = c.tier3_verdict || c.ai_verdict || 'UNKNOWN';
+    if (counts[v] !== undefined) counts[v]++;
+  }
+  $('#stat-malicious').textContent = counts.Malicious;
+  $('#stat-suspicious').textContent = counts.Suspicious;
+  $('#stat-benign').textContent = counts.Benign;
+  $('#stat-total').textContent = counts.total;
+  $('#cnt-malicious').textContent = counts.Malicious;
+  $('#cnt-suspicious').textContent = counts.Suspicious;
+  $('#cnt-benign').textContent = counts.Benign;
+  $('#cnt-all').textContent = counts.total;
+  $('#cnt-alerting').textContent = counts.Malicious + counts.Suspicious;
+}
+
+function renderCards() {
+  const filtered = allCases.filter(c => {
+    if (activeFilter === 'alerting') {
+      const v = c.tier3_verdict || c.ai_verdict || 'UNKNOWN';
+      if (v !== 'Malicious' && v !== 'Suspicious') return false;
+    } else if (activeFilter !== 'all') {
+      const v = c.tier3_verdict || c.ai_verdict || 'UNKNOWN';
+      if (v !== activeFilter) return false;
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const hay = (c.alert_id + ' ' + (c.threat_name || '') + ' ' + (c.rule_description || '') + ' ' + (c.agent_name || '')).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const container = $('#cards');
+  const empty = $('#empty');
+  if (filtered.length === 0) {
+    container.innerHTML = '';
+    if (activeView === 'cases') empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  container.innerHTML = filtered.map(c => {
+    const verdict = (c.tier3_verdict || c.ai_verdict || 'UNKNOWN').toString();
+    const threat = (c.threat_name && c.threat_name !== 'Unknown' && c.threat_name !== 'unknown')
+      ? c.threat_name : (c.rule_description || 'Security event');
+    const score = c.final_score || 0;
+    const scoreClass = score >= 70 ? 'high' : score >= 40 ? 'mid' : 'low';
+    const yarakin = c.yarakin_status === 'completed' ? '<span style="color:var(--purple);font-size:10px;margin-left:4px" title="YARAKIN analyzed">⚒</span>' : '';
+    return `
+    <div class="card" data-verdict="${verdict}" data-alert-id="${escapeHtml(c.alert_id || '')}" onclick="openDetail('${escapeHtml(c.alert_id || '')}')">
+      <div class="card-header">
+        <div class="card-title">${escapeHtml(truncate(threat, 50))}${yarakin}</div>
+        <div class="card-meta">
+          <span class="verdict-badge ${verdict}">${verdict}</span>
+          <span class="alert-id">${escapeHtml((c.alert_id || '').slice(-8))}</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-row"><span class="key">Agent</span><span class="val">${escapeHtml(c.agent_name || '—')}</span></div>
+        <div class="card-row"><span class="key">Rule</span><span class="val">${escapeHtml(c.rule_id || '—')} · ${escapeHtml(truncate(c.rule_description || '', 40))}</span></div>
+        <div class="card-row"><span class="key">When</span><span class="val">${fmtTime(c.timestamp)}</span></div>
+      </div>
+      <div class="score-bar"><div class="score-bar-fill ${scoreClass}" style="width: ${Math.min(score, 100)}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderIncidents() {
+  const container = $('#incidents-view');
+  if (allIncidents.length === 0) {
+    container.innerHTML = '<div class="empty"><div class="empty-icon">🔗</div><div>No correlated incidents. Incidents are clusters of 2+ cases with shared MITRE techniques within 30min.</div></div>';
+    return;
+  }
+  container.innerHTML = allIncidents.map(inc => {
+    const killChain = inc.kill_chain || [];
+    const threats = inc.threats || [];
+    return `
+    <div class="incident-card" data-severity="${inc.severity}" onclick="openIncident('${inc.incident_id}')">
+      <div class="incident-header">
+        <div>
+          <div class="incident-title">${escapeHtml(inc.agent_name)} — ${inc.case_count} correlated cases</div>
+          <div class="incident-meta">
+            <span>🕐 ${fmtTime(inc.first_seen)} → ${fmtTime(inc.last_seen)}</span>
+            <span>Score: ${inc.max_score}</span>
+            ${threats.length ? `<span style="color:var(--purple)">⚒ ${threats.join(', ')}</span>` : ''}
+          </div>
+        </div>
+        <span class="severity-badge ${inc.severity}">${inc.severity}</span>
+      </div>
+      <div class="kill-chain">
+        ${(inc.verdict_counts ? Object.entries(inc.verdict_counts).map(([v, n]) =>
+          `<span class="verdict-badge ${v}">${n} ${v}</span>`
+        ).join('') : '')}
+        ${killChain.map(t => `<span class="mitre-tag">${escapeHtml(t)}</span>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderActivity(events) {
+  const list = $('#activity-list');
+  list.innerHTML = events.map(e => {
+    const icon = e.type === 'yarakin' ? '⚒' : e.type === 'comment' ? '💬' : e.type === 'status_change' ? '🔄' : e.type === 'assigned' ? '👤' : '🛡';
+    const clickable = e.alert_id ? `onclick="openDetail('${e.alert_id}')"` : '';
+    return `<div class="activity-item ${e.severity || 'info'}" ${clickable}>
+      <div class="activity-time">${fmtTime(e.ts)} · ${icon} ${e.type}</div>
+      <div class="activity-msg">${escapeHtml(e.message || '')}</div>
+    </div>`;
+  }).join('');
+}
+
+function openDetail(alertId) {
+  activeAlertId = alertId;
+  const c = allCases.find(x => x.alert_id === alertId);
+  if (!c) return;
+  renderDetail(c);
+  $('#detail').classList.add('show');
+  $('#overlay').classList.add('show');
+}
+
+function openIncident(incidentId) {
+  const inc = allIncidents.find(i => i.incident_id === incidentId);
+  if (inc && inc.alert_ids && inc.alert_ids.length > 0) openDetail(inc.alert_ids[0]);
+}
+
+function closeDetail() {
+  $('#detail').classList.remove('show');
+  $('#overlay').classList.remove('show');
+  activeAlertId = null;
+}
+
+async function renderDetail(c) {
+  const verdict = (c.tier3_verdict || c.ai_verdict || 'UNKNOWN').toString();
+  const threat = (c.threat_name && c.threat_name !== 'Unknown' && c.threat_name !== 'unknown')
+    ? c.threat_name : (c.rule_description || 'Security event');
+  const mt = Array.isArray(c.mitre_techniques) ? c.mitre_techniques : (c.mitre_techniques ? [c.mitre_techniques] : []);
+  const tags = mt.length ? mt.map(t => `<span class="mitre-tag">${escapeHtml(t)}</span>`).join('') : '<span style="color:var(--text-muted)">—</span>';
+
+  let yarakinHtml = '';
+  if (c.yarakin_status) {
+    const status = c.yarakin_status;
+    const family = c.yarakin_family || '?';
+    const verdict_yrk = c.yarakin_verdict || '?';
+    yarakinHtml = `<div class="yarakin-box">
+      <div class="yarakin-status ${status}">⚒ YARAKIN — ${status}</div>
+      ${status === 'completed' ? `<div class="yarakin-family">${escapeHtml(family)}</div>
+        <div class="yarakin-verdict">Verdict: <strong>${escapeHtml(verdict_yrk)}</strong></div>` : ''}
+    </div>`;
+  }
+
+  $('#detail-title').innerHTML = `<span class="verdict-badge ${verdict}">${verdict}</span> <span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(truncate(threat, 40))}</span>`;
+  $('#detail-body').innerHTML = `
+    <div class="actions">
+      <button class="btn primary" onclick="actFetch('${escapeHtml(c.alert_id||'')}')">🔄 Re-fetch</button>
+      <button class="btn" onclick="actRerun('${escapeHtml(c.alert_id||'')}')">▶ Re-run</button>
+      <button class="btn" onclick="loadRelated('${escapeHtml(c.alert_id||'')}')">🔗 Related</button>
+    </div>
+    ${yarakinHtml}
+    <div class="section">
+      <h3>Alert</h3>
+      <div class="grid2">
+        <div class="kv"><span class="k">Alert ID</span><span class="v">${escapeHtml(c.alert_id||'—')}</span></div>
+        <div class="kv"><span class="k">Time</span><span class="v">${fmtTime(c.timestamp)}</span></div>
+        <div class="kv"><span class="k">Rule</span><span class="v">${escapeHtml(c.rule_id||'—')} · ${escapeHtml(c.rule_description||'')}</span></div>
+        <div class="kv"><span class="k">Agent</span><span class="v">${escapeHtml(c.agent_name||'—')} (${escapeHtml(c.agent_ip||'')})</span></div>
+        <div class="kv"><span class="k">Threat</span><span class="v">${escapeHtml(c.threat_name||'—')}</span></div>
+        <div class="kv"><span class="k">Score</span><span class="v">${c.final_score ?? '—'}</span></div>
+        <div class="kv"><span class="k">Status</span><span class="v">${escapeHtml(c.case_status||'—')}</span></div>
+        <div class="kv"><span class="k">IOC</span><span class="v">${escapeHtml(c.ioc||'—')}</span></div>
+      </div>
+    </div>
+    <div class="section">
+      <h3>MITRE ATT&CK</h3>
+      <div>${tags}</div>
+    </div>
+    <div class="section">
+      <h3>Case Management</h3>
+      <div id="case-management-content" data-alert-id="${escapeHtml(c.alert_id||'')}">
+        <div style="color:var(--text-muted);font-size:12px;">Loading…</div>
+      </div>
+    </div>
+    <div class="section" id="related-section" style="display:none">
+      <h3>Related Cases</h3>
+      <div id="related-content"></div>
+    </div>
+    <div class="section">
+      <h3>Behavior Summary</h3>
+      <pre>${escapeHtml(c.behavior_summary || c.ai_summary || '—')}</pre>
+    </div>
+    <div class="section">
+      <h3>YARA Rule</h3>
+      <pre>${escapeHtml(c.yara_rule || '—')}</pre>
+    </div>
+    <div class="section">
+      <h3>Timeline</h3>
+      <div id="timeline-content" data-alert-id="${escapeHtml(c.alert_id||'')}">
+        <div style="color:var(--text-muted);font-size:12px;">Loading…</div>
+      </div>
+    </div>
+  `;
+  loadCaseManagement(c.alert_id);
+  loadTimeline(c.alert_id);
+}
+
+async function loadRelated(alertId) {
+  const sec = $('#related-section');
+  const content = $('#related-content');
+  sec.style.display = 'block';
+  content.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading…</div>';
+  try {
+    const r = await fetch('/api/related/' + encodeURIComponent(alertId));
+    const d = await r.json();
+    if (!d.related || d.related.length === 0) {
+      content.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No related cases found.</div>';
+      return;
+    }
+    content.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">'
+      + (d.shared_techniques && d.shared_techniques.length ? 'Shared: ' + d.shared_techniques.map(t => `<span class="mitre-tag">${t}</span>`).join('') : 'Same agent')
+      + '</div>' + d.related.map(r => {
+        const v = r.tier3_verdict || 'UNKNOWN';
+        const t = r.threat_name || r.rule_description || 'event';
+        return `<div class="related-case" onclick="openDetail('${r.alert_id}')">
+          <span class="verdict-badge ${v}">${v}</span>
+          <span class="threat">${escapeHtml(t)}</span>
+          <span class="alert-id">${(r.alert_id||'').slice(-8)}</span>
+        </div>`;
+      }).join('');
+  } catch (e) {
+    content.innerHTML = '<div style="color:var(--red);font-size:12px;">Failed to load.</div>';
+  }
+}
+
+async function loadCaseManagement(alertId) {
+  const container = $('#case-management-content');
+  if (!alertId) return;
+  try {
+    const [statusRes, commentsRes] = await Promise.all([
+      fetch('/api/cases/' + encodeURIComponent(alertId) + '/status').then(r => r.json()),
+      fetch('/api/cases/' + encodeURIComponent(alertId) + '/comments').then(r => r.json()),
+    ]);
+    const status = statusRes.status || 'open';
+    const assignee = statusRes.assignee || '';
+    const comments = commentsRes.comments || [];
+    container.innerHTML = `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <div>
+          <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.3px;">Status</label>
+          <select id="cm-status" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;">
+            <option value="open" ${status==='open'?'selected':''}>Open</option>
+            <option value="investigating" ${status==='investigating'?'selected':''}>Investigating</option>
+            <option value="contained" ${status==='contained'?'selected':''}>Contained</option>
+            <option value="closed" ${status==='closed'?'selected':''}>Closed</option>
+            <option value="false_positive" ${status==='false_positive'?'selected':''}>False Positive</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:180px;">
+          <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.3px;">Assignee</label>
+          <div style="display:flex;gap:4px;">
+            <input id="cm-assignee" type="text" value="${escapeHtml(assignee)}" placeholder="username" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;" />
+            <button class="btn" onclick="cmAssign('${escapeHtml(alertId)}')" style="padding:4px 10px;font-size:11px;">Assign</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn primary" onclick="cmSetStatus('${escapeHtml(alertId)}')" style="margin-bottom:12px;font-size:11px;">Update Status</button>
+      <div style="border-top:1px solid var(--border);padding-top:10px;">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.3px;">Comments (${comments.length})</div>
+        <div style="margin-bottom:8px;max-height:180px;overflow-y:auto;">
+          ${comments.length === 0 ? '<div style="color:var(--text-muted);font-size:12px;font-style:italic;">No comments yet.</div>' :
+            comments.map(cm => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;margin-bottom:4px;font-size:12px;">
+              <div style="color:var(--accent);font-weight:500;">${escapeHtml(cm.author)} <span style="color:var(--text-muted);font-weight:normal;font-size:11px;">· ${fmtTime(cm.created_at)}</span></div>
+              <div style="margin-top:2px;">${escapeHtml(cm.comment)}</div>
+            </div>`).join('')}
+        </div>
+        <div style="display:flex;gap:4px;">
+          <input id="cm-comment-input" type="text" placeholder="Add a comment..." style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-size:12px;" onkeydown="if(event.key==='Enter')cmAddComment('${escapeHtml(alertId)}')" />
+          <button class="btn" onclick="cmAddComment('${escapeHtml(alertId)}')" style="padding:6px 10px;font-size:12px;">Post</button>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--red);font-size:12px;">Failed to load case state.</div>';
+  }
+}
+
+async function loadTimeline(alertId) {
+  const container = $('#timeline-content');
+  if (!alertId) return;
+  try {
+    const r = await fetch('/api/cases/' + encodeURIComponent(alertId) + '/timeline');
+    const d = await r.json();
+    const events = d.events || [];
+    if (events.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;font-style:italic;">No events yet.</div>';
+      return;
+    }
+    container.innerHTML = '<div class="timeline">' + events.map(e => {
+      const icon = e.source === 'wazuh' ? '🛡️' : e.type === 'comment' ? '💬' : e.type === 'status_change' ? '🔄' : e.type === 'assigned' ? '👤' : '•';
+      return `<div class="timeline-item">
+        <span class="timeline-icon">${icon}</span>
+        <div class="timeline-time">${fmtTime(e.timestamp)}</div>
+        <div class="timeline-detail">${escapeHtml(e.details||'')}${e.actor ? ` <span style="color:var(--text-muted)">· ${escapeHtml(e.actor)}</span>` : ''}</div>
+      </div>`;
+    }).join('') + '</div>';
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--red);font-size:12px;">Failed to load timeline.</div>';
+  }
+}
+
+async function cmSetStatus(alertId) {
+  const newStatus = $('#cm-status').value;
+  const r = await fetch('/api/cases/' + encodeURIComponent(alertId) + '/status', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: newStatus, author: 'analyst'})
+  });
+  const j = await r.json();
+  if (j.success) { showToast('Status: ' + j.new_status, 'ok'); loadCaseManagement(alertId); loadTimeline(alertId); }
+  else showToast('Error', 'err');
+}
+
+async function cmAssign(alertId) {
+  const assignee = $('#cm-assignee').value.trim();
+  if (!assignee) { showToast('Enter an assignee', 'err'); return; }
+  const r = await fetch('/api/cases/' + encodeURIComponent(alertId) + '/assign', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({assignee, author: 'analyst'})
+  });
+  const j = await r.json();
+  if (j.success) { showToast('Assigned to ' + j.assignee, 'ok'); loadCaseManagement(alertId); loadTimeline(alertId); }
+  else showToast('Error', 'err');
+}
+
+async function cmAddComment(alertId) {
+  const input = $('#cm-comment-input');
+  const comment = input.value.trim();
+  if (!comment) return;
+  const r = await fetch('/api/cases/' + encodeURIComponent(alertId) + '/comments', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({author: 'analyst', comment})
+  });
+  const j = await r.json();
+  if (j.success) { input.value = ''; showToast('Comment added', 'ok'); loadCaseManagement(alertId); loadTimeline(alertId); }
+  else showToast('Error', 'err');
+}
+
+async function actFetch(alertId) {
+  showToast('Re-fetching sample…', '');
+  try {
+    const r = await fetch('/api/cases/' + encodeURIComponent(alertId) + '/fetch', {method: 'POST'});
+    const j = await r.json();
+    showToast(j.success ? 'Sample fetched' : 'Fetch failed', j.success ? 'ok' : 'err');
+  } catch (e) { showToast('Error: ' + e, 'err'); }
+}
+
+async function actRerun(alertId) {
+  showToast('Re-running workflow…', '');
+  try {
+    const r = await fetch('/api/cases/' + encodeURIComponent(alertId) + '/rerun', {method: 'POST'});
+    const j = await r.json();
+    showToast(j.success ? 'Workflow re-triggered' : 'Re-run failed', j.success ? 'ok' : 'err');
+  } catch (e) { showToast('Error: ' + e, 'err'); }
+}
+
+$$('.nav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const view = a.dataset.view;
+    if (!view || view === 'history') return;
+    $$('.nav a').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    activeView = view;
+    $('#cards').style.display = view === 'cases' ? 'grid' : 'none';
+    $('#incidents-view').classList.toggle('active', view === 'incidents');
+    $('#filters').style.display = view === 'cases' ? 'flex' : 'none';
+    $('#empty').style.display = 'none';
+    if (view === 'incidents') { fetchIncidents(); renderIncidents(); }
+    else { renderCards(); }
+  });
+});
+
+$$('.filter-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    $$('.filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeFilter = chip.dataset.filter;
+    renderCards();
+  });
+});
+
+$('#search').addEventListener('input', e => { searchQuery = e.target.value; renderCards(); });
+$('#overlay').addEventListener('click', closeDetail);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onopen = () => console.log('ws connected');
+  ws.onmessage = e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'cases_update') fetchCases();
+      else if (msg.type === 'health_update') fetchHealth();
+      else if (msg.type === 'activity_update') fetchActivity();
+    } catch (err) {}
+  };
+  ws.onclose = () => setTimeout(connectWS, 3000);
+  ws.onerror = () => ws.close();
+}
+
+fetchCases();
+fetchIncidents();
+fetchActivity();
+fetchHealth();
+connectWS();
+setInterval(fetchHealth, 15000);
+setInterval(fetchCases, 10000);
+setInterval(fetchActivity, 8000);
+setInterval(fetchIncidents, 15000);
+</script>
+
+</body>
+</html>

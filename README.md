@@ -236,3 +236,28 @@ ships only lab defaults.
   in this lab (EID 3/5/11/22 dropped); FIM covers file-create. This is a known lab
   limitation, not a misconfiguration.
 - Licence: see `LICENSE` (MIT).
+
+---
+
+## Recent additions (2026-09)
+
+### Bridge service (`bridge/`)
+Python service that fetches samples from endpoints and forwards to YARAKIN.
+- `POST /fetch` — pulls file from Linux container or VM, base64-encodes, POSTs to YARAKIN intake webhook
+- `POST /stage` — same for active response workflows
+- **Security**: path allowlist (`/testbed/`, `/tmp/`, `/var/tmp/`), shared-secret auth via `X-Bridge-Key` header, no path traversal
+- **Config**: see `bridge/bridge.json` (sanitized) and `bridge/README.md`
+
+### Custom SOC Dashboard (`dashboard/`)
+FastAPI + WebSocket dashboard with:
+- **Live view**: card-based case feed, filter chips, search
+- **Incidents view**: auto-correlated clusters (agent + MITRE technique + 30min window)
+- **Live activity feed**: real-time events from Wazuh, YARAKIN, case management
+- **Case detail panel**: IOC, YARAKIN results, related cases, MITRE tags, YARA rule, timeline
+- **Case management**: status transitions, assignment, comments (SQLite)
+- **Endpoints**: `/api/cases`, `/api/incidents`, `/api/related`, `/api/activity`, `/api/health`, `/ws` WebSocket
+
+### n8n workflows (`n8n-workflows/`)
+- **Agentic** (`RlieZMswNK89cCYK`) — main Tier-3 pipeline
+- **YARAKIN Sample Intake** (`yrkSampleIntake01`) — file upload + analysis
+- Secrets redacted in exported JSON

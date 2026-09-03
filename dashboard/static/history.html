@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SOC Dashboard — Case History</title>
+<style>
+  :root {
+    --bg: #0a0e14; --panel: #11161d; --panel-2: #161c25; --border: #1f2937;
+    --text: #e6edf3; --muted: #7d8590; --accent: #58a6ff; --accent-2: #1f6feb;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149;
+    --benign: #2ea043; --malicious: #da3633; --suspicious: #d29922; --unknown: #6e7681;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+         background: var(--bg); color: var(--text); overflow: hidden; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  header.topbar { display:flex; align-items:center; padding: 10px 20px; background: var(--panel);
+                  border-bottom: 1px solid var(--border); gap: 20px; }
+  header.topbar .logo { font-size: 16px; font-weight: 700; letter-spacing: 0.3px; }
+  header.topbar .logo .pulse { display:inline-block; width:8px; height:8px; border-radius:50%;
+                              background: var(--green); margin-right:8px; box-shadow: 0 0 8px var(--green); }
+  header.topbar nav { display:flex; gap: 4px; }
+  header.topbar nav a { padding: 6px 14px; border-radius: 6px; color: var(--muted); font-size: 13px; font-weight: 500; }
+  header.topbar nav a:hover { background: var(--panel-2); color: var(--text); text-decoration:none; }
+  header.topbar nav a.active { background: var(--accent-2); color: white; }
+  header.topbar .spacer { flex:1; }
+
+  .toolbar { display:flex; gap: 10px; padding: 12px 20px; background: var(--bg);
+             border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
+  .toolbar input, .toolbar select { background: var(--panel); color: var(--text);
+           border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+           font-size: 13px; outline: none; }
+  .toolbar input:focus, .toolbar select:focus { border-color: var(--accent); }
+  .toolbar input { flex: 1; max-width: 400px; }
+  .toolbar .count { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+  /* === Table === */
+  main.history { height: calc(100vh - 105px); overflow-y: auto; padding: 0 20px 20px; }
+  table.cases { width: 100%; border-collapse: collapse; background: var(--panel);
+                border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  table.cases thead { position: sticky; top: 0; background: var(--panel-2); z-index: 1; }
+  table.cases th { text-align: left; padding: 10px 12px; font-size: 11px;
+                   text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);
+                   border-bottom: 1px solid var(--border); font-weight: 600; }
+  table.cases td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border);
+                   color: var(--text); }
+  table.cases tr { cursor: pointer; transition: background 0.1s; }
+  table.cases tr:hover { background: var(--panel-2); }
+  table.cases tr:last-child td { border-bottom: none; }
+  .verdict-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px;
+                   font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; min-width: 80px; text-align: center; }
+  .verdict-badge.Malicious { background: var(--malicious); color: white; }
+  .verdict-badge.Benign { background: var(--benign); color: white; }
+  .verdict-badge.Suspicious { background: var(--suspicious); color: #1a1a1a; }
+  .verdict-badge.UNKNOWN, .verdict-badge.unknown { background: var(--unknown); color: white; }
+  .score-bar { display: inline-block; width: 50px; height: 6px; background: var(--border);
+               border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
+  .score-bar .fill { height: 100%; background: var(--green); }
+  .score-bar .fill.med { background: var(--yellow); }
+  .score-bar .fill.high { background: var(--red); }
+  .alert-id-cell { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); }
+  .ts-cell { color: var(--muted); font-size: 12px; }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .pager { display:flex; justify-content:center; gap: 8px; padding: 20px; }
+  .pager button { padding: 6px 12px; background: var(--panel); color: var(--text);
+                  border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .pager button:hover:not(:disabled) { border-color: var(--accent); }
+  .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pager button.active { background: var(--accent-2); border-color: var(--accent-2); color: white; }
+
+  /* === Detail panel (reused) === */
+  .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5);
+             z-index: 100; display: none; }
+  .overlay.show { display: block; }
+  .detail-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 55%; min-width: 500px;
+                  max-width: 800px; background: var(--panel); border-left: 1px solid var(--border);
+                  z-index: 101; transform: translateX(100%); transition: transform 0.25s ease-out;
+                  overflow-y: auto; }
+  .detail-panel.show { transform: translateX(0); }
+  .detail-header { position: sticky; top: 0; background: var(--panel); padding: 16px 20px;
+                   border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; z-index: 1; }
+  .detail-header h2 { font-size: 16px; margin: 0; flex: 1; }
+  .detail-header .close { background: none; border: 1px solid var(--border); color: var(--text);
+                          width: 30px; height: 30px; border-radius: 6px; cursor: pointer; font-size: 16px; }
+  .detail-body { padding: 20px; }
+  .section { margin: 16px 0; padding: 14px 16px; background: var(--panel-2);
+             border: 1px solid var(--border); border-radius: 8px; }
+  .section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+                color: var(--muted); margin: 0 0 10px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+  .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+  .kv .k { color: var(--muted); }
+  .kv .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); text-align: right; }
+  pre { background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+        padding: 12px 14px; font-size: 12px; overflow-x: auto; color: #c9d1d9; margin: 0; white-space: pre-wrap; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { background: var(--accent-2); color: white; padding: 2px 8px; border-radius: 10px;
+         font-size: 11px; font-family: ui-monospace, monospace; }
+  .actions { display: flex; gap: 8px; margin: 12px 0; }
+  .btn { padding: 7px 14px; border: 1px solid var(--border); background: var(--panel);
+         color: var(--text); border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
+  .btn:hover { background: var(--panel-2); border-color: var(--accent); }
+  .btn.primary { background: var(--accent-2); color: white; border-color: var(--accent-2); }
+  .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 18px; background: var(--panel);
+           border: 1px solid var(--border); border-radius: 8px; font-size: 13px; z-index: 200;
+           opacity: 0; transition: opacity 0.2s; }
+  .toast.show { opacity: 1; }
+  .toast.ok { border-color: var(--green); }
+  .toast.err { border-color: var(--red); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><span class="pulse"></span>SOC Dashboard</div>
+  <nav>
+    <a href="/">Live</a>
+    <a href="/history.html" class="active">History</a>
+  </nav>
+  <div class="spacer"></div>
+  <div id="total" style="color:var(--muted);font-size:12px;">— cases</div>
+</header>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Search by alert ID, threat, rule, agent…" />
+  <select id="filter-verdict">
+    <option value="ALERTING">⚠️ Needs Attention (Malicious + Suspicious)</option>
+    <option value="ALL">All verdicts</option>
+    <option value="Malicious">🔴 Malicious only</option>
+    <option value="Suspicious">🟡 Suspicious only</option>
+    <option value="Benign">🟢 Benign</option>
+    <option value="UNKNOWN">⚪ Unknown</option>
+  </select>
+  <select id="filter-time">
+    <option value="all">All time</option>
+    <option value="24h">Last 24h</option>
+    <option value="7d">Last 7 days</option>
+    <option value="30d">Last 30 days</option>
+  </select>
+  <span class="count" id="result-count">0 results</span>
+</div>
+
+<main class="history">
+  <table class="cases">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Alert ID</th>
+        <th>Threat</th>
+        <th>Verdict</th>
+        <th>Score</th>
+        <th>Agent</th>
+        <th>Rule</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="7" class="empty-state">Loading…</td></tr>
+    </tbody>
+  </table>
+  <div class="pager" id="pager"></div>
+</main>
+
+<div class="overlay" id="overlay"></div>
+<aside class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <h2 id="detail-title">Alert Detail</h2>
+    <button class="close" onclick="closeDetail()">×</button>
+  </div>
+  <div class="detail-body" id="detail-body">
+    <div style="color:var(--muted);text-align:center;padding:40px;">Loading…</div>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+let allCases = [];
+let filteredCases = [];
+let currentPage = 1;
+const PAGE_SIZE = 50;
+
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function truncate(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+function fmtRel(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  const sec = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (sec < 60) return sec + 's ago';
+  if (sec < 3600) return Math.floor(sec/60) + 'm ago';
+  if (sec < 86400) return Math.floor(sec/3600) + 'h ago';
+  return Math.floor(sec/86400) + 'd ago';
+}
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return isNaN(d.getTime()) ? ts : d.toLocaleString();
+}
+function toast(msg, kind) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+function scoreClass(s) {
+  if (s == null) return '';
+  if (s >= 70) return 'high';
+  if (s >= 30) return 'med';
+  return '';
+}
+
+function applyFilters() {
+  const search = ($('#search').value || '').toLowerCase();
+  const verdict = $('#filter-verdict').value;
+  const timeRange = $('#filter-time').value;
+  let cutoff = 0;
+  if (timeRange === '24h') cutoff = Date.now() - 86400000;
+  else if (timeRange === '7d') cutoff = Date.now() - 7*86400000;
+  else if (timeRange === '30d') cutoff = Date.now() - 30*86400000;
+
+  filteredCases = allCases.filter(c => {
+    // Verdict
+    if (verdict !== 'ALL' && verdict !== 'ALERTING') {
+      const v = (c.tier3_verdict || c.ai_verdict || 'UNKNOWN').toString();
+      if (v !== verdict) return false;
+    }
+    if (verdict === 'ALERTING') {
+      const v = (c.tier3_verdict || c.ai_verdict || 'UNKNOWN').toString();
+      if (v !== 'Malicious' && v !== 'Suspicious') return false;
+    }
+    // Time
+    if (cutoff) {
+      const t = new Date(c.timestamp).getTime();
+      if (isNaN(t) || t < cutoff) return false;
+    }
+    // Search
+    if (search) {
+      const hay = [c.alert_id, c.threat_name, c.rule_description, c.rule_id, c.agent_name, c.ioc].join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  currentPage = 1;
+  render();
+}
+
+function render() {
+  const total = filteredCases.length;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const page = filteredCases.slice(start, start + PAGE_SIZE);
+  $('#result-count').textContent = total.toLocaleString() + ' result' + (total === 1 ? '' : 's');
+
+  const tbody = $('#tbody');
+  if (total === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No cases match the current filters.</td></tr>';
+    $('#pager').innerHTML = '';
+    return;
+  }
+  tbody.innerHTML = page.map(c => {
+    const verdict = (c.tier3_verdict || c.ai_verdict || 'UNKNOWN').toString();
+    const threat = (c.threat_name && c.threat_name !== 'Unknown') ? c.threat_name : (c.rule_description || '—');
+    const score = c.final_score != null ? c.final_score : null;
+    const fillClass = scoreClass(score);
+    return `
+      <tr data-alert-id="${escapeHtml(c.alert_id)}" onclick="selectCase('${escapeHtml(c.alert_id)}')">
+        <td class="ts-cell" title="${fmtTime(c.timestamp)}">${fmtRel(c.timestamp)}</td>
+        <td class="alert-id-cell">${escapeHtml(c.alert_id || '—')}</td>
+        <td>${escapeHtml(truncate(threat, 60))}</td>
+        <td><span class="verdict-badge ${verdict}">${verdict}</span></td>
+        <td>${score != null ? `<span class="score-bar"><span class="fill ${fillClass}" style="width:${Math.min(score,100)}%"></span></span>${score}` : '—'}</td>
+        <td>${escapeHtml(c.agent_name || '—')}</td>
+        <td>${escapeHtml(c.rule_id || '—')}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Pager
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const pager = $('#pager');
+  if (totalPages <= 1) { pager.innerHTML = ''; return; }
+  let html = `<button onclick="goPage(1)" ${currentPage === 1 ? 'disabled' : ''}>« First</button>`;
+  html += `<button onclick="goPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>`;
+  const startP = Math.max(1, currentPage - 2);
+  const endP = Math.min(totalPages, currentPage + 2);
+  if (startP > 1) html += '<span style="color:var(--muted)">…</span>';
+  for (let p = startP; p <= endP; p++) {
+    html += `<button class="${p === currentPage ? 'active' : ''}" onclick="goPage(${p})">${p}</button>`;
+  }
+  if (endP < totalPages) html += '<span style="color:var(--muted)">…</span>';
+  html += `<button onclick="goPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next ›</button>`;
+  html += `<button onclick="goPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>Last »</button>`;
+  html += `<span style="color:var(--muted);margin-left:12px;">Page ${currentPage} of ${totalPages}</span>`;
+  pager.innerHTML = html;
+}
+
+function goPage(p) {
+  const totalPages = Math.ceil(filteredCases.length / PAGE_SIZE);
+  if (p < 1 || p > totalPages) return;
+  currentPage = p;
+  render();
+  document.querySelector('main.history').scrollTop = 0;
+}
+
+async function selectCase(alertId) {
+  const panel = $('#detail-panel');
+  const overlay = $('#overlay');
+  panel.classList.add('show');
+  overlay.classList.add('show');
+  const body = $('#detail-body');
+  body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;">Loading…</div>';
+  try {
+    const r = await fetch('/api/cases/' + encodeURIComponent(alertId));
+    if (!r.ok) { body.innerHTML = '<div style="color:var(--red);text-align:center;padding:40px;">Case not found.</div>'; return; }
+    const c = await r.json();
+    renderDetail(c);
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--red);text-align:center;padding:40px;">Error: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function renderDetail(c) {
+  const verdict = (c.tier3_verdict || c.ai_verdict || 'UNKNOWN').toString();
+  const threat = c.threat_name || c.rule_description || 'Security event';
+  const mt = Array.isArray(c.mitre_techniques) ? c.mitre_techniques : (c.mitre_techniques ? [c.mitre_techniques] : []);
+  const tags = mt.length ? mt.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('') : '<span style="color:var(--muted)">—</span>';
+  $('#detail-title').innerHTML = `<span class="verdict-badge ${verdict}" style="margin-right:10px">${verdict}</span> ${escapeHtml(truncate(threat, 50))}`;
+  $('#detail-body').innerHTML = `
+    <div class="actions">
+      <button class="btn primary" onclick="actFetch('${escapeHtml(c.alert_id||'')}')">🔄 Re-fetch sample</button>
+      <button class="btn" onclick="actRerun('${escapeHtml(c.alert_id||'')}')">▶ Re-run workflow</button>
+    </div>
+    <div class="section">
+      <h3>Alert Metadata</h3>
+      <div class="grid2">
+        <div class="kv"><span class="k">Alert ID</span><span class="v">${escapeHtml(c.alert_id||'—')}</span></div>
+        <div class="kv"><span class="k">Timestamp</span><span class="v">${fmtTime(c.timestamp)}</span></div>
+        <div class="kv"><span class="k">Rule</span><span class="v">${escapeHtml(c.rule_id||'—')} · ${escapeHtml(c.rule_description||'')}</span></div>
+        <div class="kv"><span class="k">Agent</span><span class="v">${escapeHtml(c.agent_name||'—')} (${escapeHtml(c.agent_ip||'')})</span></div>
+        <div class="kv"><span class="k">Threat</span><span class="v">${escapeHtml(c.threat_name||'—')}</span></div>
+        <div class="kv"><span class="k">Final score</span><span class="v">${c.final_score ?? '—'}</span></div>
+        <div class="kv"><span class="k">Status</span><span class="v">${escapeHtml(c.case_status||'—')}</span></div>
+        <div class="kv"><span class="k">AI severity</span><span class="v">${escapeHtml(c.ai_severity||'—')}</span></div>
+      </div>
+    </div>
+    <div class="section">
+      <h3>IOCs</h3>
+      <pre>${escapeHtml(c.ioc || '—')}</pre>
+    </div>
+    <div class="section">
+      <h3>Tier-3 Analysis</h3>
+      <div style="margin-bottom:10px"><strong>Behavior:</strong> ${escapeHtml(c.behavior_summary || c.ai_summary || '—')}</div>
+      <div style="margin-bottom:6px"><strong>MITRE techniques:</strong></div>
+      <div class="tags">${tags}</div>
+    </div>
+    <div class="section">
+      <h3>YARA Rule</h3>
+      <pre>${escapeHtml(c.yara_rule || '—')}</pre>
+    </div>
+  `;
+}
+
+function closeDetail() {
+  $('#detail-panel').classList.remove('show');
+  $('#overlay').classList.remove('show');
+}
+$('#overlay').addEventListener('click', closeDetail);
+
+async function actFetch(alertId) {
+  toast('Fetching sample…');
+  try {
+    const r = await fetch('/api/cases/' + encodeURIComponent(alertId) + '/fetch', {method:'POST'});
+    const j = await r.json();
+    toast('Bridge: ' + JSON.stringify(j).slice(0, 80), r.ok ? 'ok' : 'err');
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
+}
+async function actRerun(alertId) {
+  toast('Re-running workflow…');
+  try {
+    const r = await fetch('/api/cases/' + encodeURIComponent(alertId) + '/rerun', {method:'POST'});
+    const j = await r.json();
+    toast('n8n: ' + JSON.stringify(j).slice(0, 80), r.ok ? 'ok' : 'err');
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
+}
+
+// Search/filter events
+$('#search').addEventListener('input', debounce(applyFilters, 200));
+$('#filter-verdict').addEventListener('change', applyFilters);
+$('#filter-time').addEventListener('change', applyFilters);
+
+function debounce(fn, ms) {
+  let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+// Load all cases
+async function loadAll() {
+  try {
+    const r = await fetch('/api/cases?size=500');
+    const j = await r.json();
+    allCases = j.cases || [];
+    $('#total').textContent = (j.total || 0).toLocaleString() + ' total cases';
+    applyFilters();
+  } catch (e) {
+    console.error('load failed', e);
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>

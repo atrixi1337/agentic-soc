@@ -1,0 +1,1310 @@
+[
+  {
+    "updatedAt": "2026-09-03T09:29:31.000Z",
+    "createdAt": "2026-08-14T12:12:36.585Z",
+    "id": "RlieZMswNK89cCYK",
+    "name": "Agentic",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "jsCode": "// 1. Grab the AI's text response from the HTTP Request node\nlet aiText = $input.first().json.choices[0].message.content;\n\n// 2. Clean it (remove markdown backticks if the model ever adds them)\naiText = aiText.replace(/```json/g, \"\").replace(/```/g, \"\").trim();\n\n// 3. Parse the AI's text into a real object\nconst aiAnalysis = JSON.parse(aiText);\n\n// 4. Grab the original Wazuh alert from the Webhook node\nconst wazuhData = $('Webhook from Wazuh').first().json.body;\nconst wazuhLevel = wazuhData.rule.level || 0;\n\n// 5. --- THE SCORING SYSTEM ---\nlet riskScore = 0;\n\n// Base score: Wazuh rule level (e.g. 12)\nriskScore += wazuhLevel;\n\n// AI logic points\nif (aiAnalysis.verdict === \"True Positive\") { riskScore += 50; }\nif (aiAnalysis.severity === \"High\") { riskScore += 20; }\n\n// 6. Package everything into the Case File for the next agents\nreturn [{\n  json: {\n    final_score: riskScore,\n    ai_verdict: aiAnalysis.verdict,\n    ai_severity: aiAnalysis.severity,\n    ai_summary: aiAnalysis.summary,\n    ai_ioc: aiAnalysis.ioc,\n    wazuh_level: wazuhLevel,\n    original_alert: wazuhData\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -560,
+          224
+        ],
+        "id": "771bae44-4e2b-4b6c-85ce-36d0090a8f0a",
+        "name": "Scoring"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "e1a80abd-e35b-45cb-958a-e57dad1e144b",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -288,
+          -528
+        ],
+        "id": "91c05b76-9658-438c-b058-0adf342a77dc",
+        "name": "Webhook from Wazuh",
+        "webhookId": "e1a80abd-e35b-45cb-958a-e57dad1e144b"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer sk-or-v1-REDACTED"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({\n  \"model\": \"cohere/north-mini-code:free\",\n  \"temperature\": 0.2,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an expert Tier 1 SOC Analyst. Analyze the security alert and respond ONLY with a valid JSON object containing these exact keys: 'verdict' (True Positive, False Positive, or Inconclusive), 'severity' (High, Medium, or Low), 'summary' (one sentence), and 'ioc' (the file path or IP). IMPORTANT CONTEXT: The EICAR test file (Virus:DOS/EICAR_Test_File) is a known benign testing artifact used by admins. If you see EICAR, the verdict MUST be False Positive. Do not include markdown, backticks, or any conversational text.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": JSON.stringify($json.body)\n    }\n  ]\n}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          -752,
+          224
+        ],
+        "id": "0024fec9-9b9b-4f0b-9a44-f33f8f5479b8",
+        "name": "HTTP OpenRouter"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.tier3_verdict }}",
+                      "rightValue": "Benign",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "cd49650c-4063-4033-8a7d-588df4ba19e7"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Benign"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "id": "bf5f0e44-d23d-48b0-85e7-ef4e148431f6",
+                      "leftValue": "={{ $json.tier3_verdict }}",
+                      "rightValue": "Malicious",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Malicious"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "id": "b4607fad-0911-4513-928e-8d21210d1f10",
+                      "leftValue": "={{ $json.tier3_verdict }}",
+                      "rightValue": "Suspicious",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals",
+                        "name": "filter.operator.equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Suspicious"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          672,
+          0
+        ],
+        "id": "5a46f647-8ea0-46ad-b2fb-0d78b914f8f3",
+        "name": "Switch"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "b549b138-4bc1-489e-bdd2-ef15a5da085b",
+                "name": "case_status",
+                "value": "CLOSED - FALSE POSITIVE",
+                "type": "string"
+              },
+              {
+                "id": "d168bbcc-f40d-47dc-a3eb-6d593aa312ae",
+                "name": "disposition_by",
+                "value": "AI Triage Agent (Tier-1, automated)",
+                "type": "string"
+              },
+              {
+                "id": "3ea2ba34-3979-4d8b-92ce-7d869c71d35c",
+                "name": "disposition_note",
+                "value": "={{ \"Auto-closed by Agentic SOC: \" + $json.ai_summary }}",
+                "type": "string"
+              },
+              {
+                "id": "71b5ed4d-d5b3-4684-9831-734f7a6fa989",
+                "name": "closed_at",
+                "value": "={{ $now.toISO() }}",
+                "type": "string"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.5,
+        "position": [
+          896,
+          -112
+        ],
+        "id": "b8db2e35-a80c-4a4f-bc65-40c8f437c671",
+        "name": "Disposition"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer sk-or-v1-REDACTED"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({\n  \"model\": \"cohere/north-mini-code:free\",\n  \"temperature\": 0.1,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a Senior SOC Response Agent. You receive a confirmed critical security case file. Decide the containment action. Respond ONLY with valid JSON containing keys: 'action' (exactly one of: quarantine_file, block_ip, isolate_host), 'target' (the exact file path or IP to act on), 'justification' (one sentence). No markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": JSON.stringify($json)\n    }\n  ]\n}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          -16,
+          512
+        ],
+        "id": "734d7c1b-24b8-4083-90bb-a75a9aa3fa96",
+        "name": "HTTP openrouter"
+      },
+      {
+        "parameters": {
+          "jsCode": "// AI response comes from the previous node (Defense Agent HTTP)\nconst raw = $input.first().json.choices[0].message.content;\nconst clean = raw.replace(/```json/g, \"\").replace(/```/g, \"\").trim();\nconst plan = JSON.parse(clean);\n\n// Full Case File is pulled directly from the Scoring node\nconst incoming = $('Scoring').first().json;\n\nreturn [{\n  json: {\n    ...incoming,\n    response_action: plan.action,\n    response_target: plan.target,\n    response_justification: plan.justification,\n    case_status: \"CRITICAL - CONTAINMENT ORDERED\",\n    disposition_by: \"AI Defense Agent (Tier-3, automated)\"\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          160,
+          512
+        ],
+        "id": "3c4c3f2e-35ae-4905-86d3-6a9f2998f6fb",
+        "name": "Case File is pulled"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://192.168.10.101:9200/agentic-soc-cases/_doc",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBasicAuth",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.case_doc || {}) }}",
+          "options": {
+            "allowUnauthorizedCerts": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          912,
+          64
+        ],
+        "id": "72e45463-af3e-4e62-9fb0-a984233c22f7",
+        "name": "http to wazuh index",
+        "credentials": {
+          "httpBasicAuth": {
+            "id": "3zjGJ9eOhdcoQob7",
+            "name": "Unnamed credential"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://192.168.10.101:9200/agentic-soc-cases/_doc",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBasicAuth",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({\n  \"timestamp\": $now.toISO(),\n  \"alert_id\": $json.original_alert.id,\n  \"agent_name\": $json.original_alert.agent.name,\n  \"agent_ip\": $json.original_alert.agent.ip,\n  \"rule_id\": $json.original_alert.rule.id,\n  \"rule_description\": $json.original_alert.rule.description,\n  \"threat_name\": $json.original_alert.data.win.eventdata[\"threat Name\"],\n  \"ioc\": $json.ai_ioc,\n  \"ai_verdict\": $json.ai_verdict,\n  \"ai_severity\": $json.ai_severity,\n  \"ai_summary\": $json.ai_summary,\n  \"final_score\": $json.final_score,\n  \"case_status\": $json.case_status\n}) }}",
+          "options": {
+            "allowUnauthorizedCerts": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1120,
+          -112
+        ],
+        "id": "40e4a352-36ed-4f4b-bf3d-9d9233a41f71",
+        "name": "http to wazuh index1",
+        "credentials": {
+          "httpBasicAuth": {
+            "id": "oyFSiUMW2UnKHB81",
+            "name": "wazuh asoc indexer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Fetch the original alert from the Scoring node\nconst scoringData = $('Scoring').first().json;\nconst originalAlert = scoringData.original_alert || {};\n\n// Initialize default values\nlet iocType = 'unknown';\nlet iocValue = null;\nlet agentName = originalAlert.data?.agent?.name || 'unknown';\n\n// 1. Try to extract File Hash (Sysmon Event 15 usually has a 'hashes' field)\nconst hashes = originalAlert.data?.win?.eventdata?.hashes;\nif (hashes) {\n  // Example format: \"SHA256=275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2e2c4d60853f3a6b2c4\"\n  const sha256Match = hashes.match(/SHA256=([a-fA-F0-9]{64})/);\n  if (sha256Match) {\n    iocType = 'hash';\n    iocValue = sha256Match[1];\n  }\n}\n\n// 2. If no hash found, try to extract an IP address (e.g., from a network connection alert)\nif (!iocValue) {\n  const ip = originalAlert.data?.win?.eventdata?.ipAddress || originalAlert.data?.srcip;\n  if (ip && ip !== '127.0.0.1') {\n    iocType = 'ip';\n    iocValue = ip;\n  }\n}\n\n// Return the extracted data so the next nodes can use it\nreturn [\n  {\n    json: {\n      ioc_type: iocType,\n      ioc_value: iocValue,\n      agent_name: agentName,\n      original_alert: originalAlert,\n      ai_summary_tier1: scoringData.ai_summary || \"No Tier 1 summary provided\"\n    }\n  }\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          896,
+          224
+        ],
+        "id": "660ae474-ea08-48b5-9107-5901b6ccbbb7",
+        "name": "Extract IOC"
+      },
+      {
+        "parameters": {
+          "jsCode": "const alert = $input.first().json.body;\nconst eventData = alert.data?.win?.eventdata || {};\nconst agentId = alert.agent?.id || \"000\";\n\nlet iocs = {\n    agent_id: agentId,\n    hashes: [],\n    urls: [],\n    ips: []\n};\n\n// 1. Extract Hashes (Sysmon EID 15 or Defender)\nif (eventData.Hashes) {\n    const hashMatch = eventData.Hashes.match(/SHA256=([a-fA-F0-9]{64})/i);\n    if (hashMatch) iocs.hashes.push(hashMatch[1]);\n}\n\n// 2. Extract URLs (Sysmon EID 15 TargetFilename or Defender path)\nif (eventData.TargetFilename) iocs.urls.push(eventData.TargetFilename);\nif (eventData.commandLine) {\n    const urlMatch = eventData.commandLine.match(/http[s]?:\\/\\/[^\\s]+/i);\n    if (urlMatch) iocs.urls.push(urlMatch[0]);\n}\n\n// 3. Extract IP (from Sysmon NetworkConnect or Agent IP)\nif (eventData.DestinationIp) iocs.ips.push(eventData.DestinationIp);\nif (alert.agent?.ip) iocs.ips.push(alert.agent.ip);\n\nreturn [{\n    json: {\n        original_alert: alert,\n        iocs: iocs,\n        timestamp: new Date().toISOString()\n    }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -80,
+          -528
+        ],
+        "id": "df44a658-d5e1-492f-9c4f-0c06f6b7c62c",
+        "name": "Extract IOCs"
+      },
+      {
+        "parameters": {
+          "url": "=https://www.virustotal.com/api/v3/files/{{ $json.iocs.hashes[0] }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-apikey",
+                "value": "a5ce5b8fe26e1e67777015543180eda516b209aeee47387302cfd179fe86caa1"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          368,
+          -528
+        ],
+        "id": "d55616e7-b1c2-401f-8433-624ebf03599e",
+        "name": "VirusTotal Lookup",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// 1. Reach back to get the IOCs and Original Alert\nconst iocsNode = $('Extract IOCs').first().json;\n\n// 2. Reach back to get the Wazuh Timeline (last 10 alerts)\n// OpenSearch returns data inside hits.hits, we just want the descriptions/logs\nconst timelineNode = $('Get Wazuh Timeline').first().json;\nconst recentActivity = (timelineNode.hits?.hits || []).map(hit => \n    hit._source.rule?.description || hit._source.full_log || \"Unknown Event\"\n);\n\n// 3. Grab the current input (VirusTotal Response)\nconst vtResponse = $input.first().json;\n\n// 4. Extract the juicy VT stats (handling cases where VT returned an error/404)\nlet vtStats = \"No VirusTotal data available.\";\nlet vtClassification = \"Unknown\";\nif (vtResponse.data && vtResponse.data.attributes) {\n    vtStats = vtResponse.data.attributes.last_analysis_stats;\n    vtClassification = vtResponse.data.attributes.popular_threat_classification?.suggested_threat_label || \"Unclassified\";\n}\n\n// 5. Build the final Context Package for the Tier-3 Agent\nreturn [{\n  json: {\n    original_alert: iocsNode.original_alert,\n    extracted_iocs: iocsNode.iocs,\n    endpoint_timeline_last_1h: recentActivity,\n    virustotal_stats: vtStats,\n    virustotal_threat_label: vtClassification\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          592,
+          -528
+        ],
+        "id": "0b2a94f6-1cb9-480c-b873-c5d6e00c7f7b",
+        "name": "Merge Intel"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.akashml.com/v1/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer akml-REDACTED"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({\n  \"model\": \"deepseek-ai/DeepSeek-V4-Flash-0731\",\n  \"temperature\": 0.1,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a Tier-3 SOC Threat Hunter and Malware Analyst. You will be given a security alert, a timeline of the endpoint's recent activity, and VirusTotal intelligence. Analyze the attack chain. Respond ONLY with a valid JSON object containing these exact keys: 'verdict' (Benign, Malicious, or Suspicious), 'malware_family' (string, e.g. Mimikatz, EICAR, Cobalt Strike, Unknown), 'mitre_techniques' (array of strings, e.g. ['T1003.001']), 'behavior_summary' (1-2 sentences explaining the attack chain seen in the timeline), and 'yara_rule' (Write a complete, valid YARA rule string to hunt for this specific file/behavior across the network. If Benign, output 'N/A'). Do not include markdown formatting or backticks.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": JSON.stringify($json)\n    }\n  ]\n}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          816,
+          -528
+        ],
+        "id": "d5296a54-589e-4589-9cc1-ad0c74509a29",
+        "name": "Tier-3 Analyst Agent"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://192.168.10.101:9200/wazuh-alerts-*/_search",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBasicAuth",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({\n  \"size\": 10,\n  \"sort\": [ { \"timestamp\": { \"order\": \"desc\" } } ],\n  \"query\": {\n    \"bool\": {\n      \"must\": [\n        { \"match\": { \"agent.id\": $json.iocs.agent_id } },\n        { \"range\": { \"timestamp\": { \"gte\": \"now-1h/h\" } } }\n      ]\n    }\n  }\n}) }}",
+          "options": {
+            "allowUnauthorizedCerts": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          144,
+          -528
+        ],
+        "id": "cbae6bd9-bbcb-4a6f-a15e-591b6f7fb97f",
+        "name": "Get Wazuh Timeline",
+        "credentials": {
+          "httpBasicAuth": {
+            "id": "3zjGJ9eOhdcoQob7",
+            "name": "Unnamed credential"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// 1. Clean and parse the AI's JSON response\nlet raw = ($input.first().json.choices?.[0]?.message?.content) || \"\";\nlet clean = raw.replace(/```json/gi, \"\").replace(/```/g, \"\").trim();\nlet analysis = null;\nconst mj = clean.match(/\\{[\\s\\S]*\\}/);\nif (mj) {\n    let t = mj[0].replace(/[\\u0000-\\u001f]+/g, \" \").replace(/,\\s*([}\\]])/g, \"$1\");\n    try { analysis = JSON.parse(t); } catch (e) { analysis = null; }\n}\nif (!analysis || typeof analysis.verdict !== \"string\") {\n    analysis = {\n        verdict: \"Suspicious\",\n        malware_family: \"Unknown\",\n        mitre_techniques: [],\n        behavior_summary: \"AI response could not be parsed as JSON - flagged for manual review. Raw output: \" + raw.slice(0, 300),\n        yara_rule: 'rule unparsed_ai_response { condition: false }'\n    };\n}(clean);\n\n// 2. Grab the original alert data from the beginning of the flow\nconst iocsData = $('Extract IOCs').first().json;\nconst original_alert = iocsData.original_alert;\nconst wazuhLevel = original_alert.rule?.level || 0;\n\n// 3. --- THE TIER-3 SCORING SYSTEM ---\nlet riskScore = wazuhLevel;\nlet case_status = \"\";\n\nif (analysis.verdict === \"Malicious\") {\n    riskScore += 60; // Heavy penalty for confirmed malware\n    case_status = \"CRITICAL - MALICIOUS\";\n} else if (analysis.verdict === \"Suspicious\") {\n    riskScore += 30; // Moderate penalty for LOLBINs/Suspicious behavior\n    case_status = \"FORENSIC - REQUIRES HUMAN REVIEW\";\n} else {\n    case_status = \"CLOSED - BENIGN\";\n}\n\n// 4. Package the ultimate Case File for the Switch and Dashboard\n// Build the flat case document here (real JS, no expression-evaluator limits).\nconst ag = original_alert.agent || {};\nconst rl2 = original_alert.rule || {};\nconst od = original_alert.data || {};\nconst ed = (od.win && od.win.eventdata) || {};\nconst io2 = iocsData.iocs || {};\nconst case_ioc = (io2.hashes && io2.hashes[0]) ||\n                 (io2.urls && io2.urls[0]) ||\n                 od.srcip || ed.path || \"n/a\";\nconst case_doc = {\n  timestamp: new Date().toISOString(),\n  alert_id: original_alert.id !== undefined ? original_alert.id : null,\n  agent_name: ag.name || \"unknown\",\n  agent_ip: ag.ip !== undefined ? String(ag.ip) : \"n/a\",\n  rule_id: rl2.id !== undefined ? rl2.id : null,\n  rule_description: rl2.description || \"\",\n  threat_name: (analysis.malware_family && analysis.malware_family !== \"Unknown\" && analysis.malware_family !== \"unknown\")\n      ? analysis.malware_family\n      : (rl2.description || case_ioc || \"Security event\"),\n  ioc: case_ioc,\n  tier3_verdict: analysis.verdict,\n  behavior_summary: analysis.behavior_summary || \"\",\n  mitre_techniques: analysis.mitre_techniques || [],\n  yara_rule: analysis.yara_rule || \"\",\n  final_score: riskScore,\n  case_status: case_status,\n};\n\nreturn [{\n  json: {\n    // Original Data\n    original_alert: original_alert,\n    extracted_iocs: iocsData.iocs,\n    \n    // Tier-3 Intelligence\n    tier3_verdict: analysis.verdict,\n    malware_family: analysis.malware_family,\n    mitre_techniques: analysis.mitre_techniques,\n    behavior_summary: analysis.behavior_summary,\n    yara_rule: analysis.yara_rule,\n    \n    // Final Scoring\n    final_score: riskScore,\n    case_status: case_status,\n    case_doc: case_doc,\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1040,
+          -528
+        ],
+        "id": "36ff5f1a-c243-4164-b49b-05e1a7952d28",
+        "name": "Parse & Score"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://192.168.10.101:55000/security/user/authenticate",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Basic REDACTED_BASIC_AUTH"
+              }
+            ]
+          },
+          "options": {
+            "allowUnauthorizedCerts": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1264,
+          96
+        ],
+        "id": "2ba42b9e-cc33-4a25-b685-daa7e2e31914",
+        "name": "AR Auth"
+      },
+      {
+        "parameters": {
+          "method": "PUT",
+          "url": "https://192.168.10.101:55000/active-response?agents_list=002",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $('AR Auth').first().json.data.token }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ command: '!soc-quarantine.cmd', arguments: [ ($('Parse & Score').first().json.original_alert?.data?.win?.eventdata?.targetFilename || $('Parse & Score').first().json.original_alert?.data?.win?.eventdata?.TargetFilename || $('Parse & Score').first().json.original_alert?.syscheck?.path || '') ] }) }}",
+          "options": {
+            "allowUnauthorizedCerts": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1488,
+          96
+        ],
+        "id": "d720d5a7-13d7-481b-afad-c59712923a9d",
+        "name": "AR Quarantine",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Rebuild the Tier-3 case file and attach the Active Response outcome\nconst caseFile = $('Sample Triage').first().json;\nconst resp = $input.first().json;\nlet dispatched = false;\nlet detail = null;\nif (resp && resp.data && Array.isArray(resp.data.affected_items)) {\n  dispatched = resp.data.affected_items.length > 0;\n  detail = resp.data;\n} else if (resp && resp.error) {\n  detail = resp.error;\n}\nconst prevDoc = caseFile.case_doc || {};\nconst caseDoc = Object.assign({}, prevDoc, { ar_dispatched: dispatched, ar_detail: detail });\nreturn [{ json: Object.assign({}, caseFile, { ar_dispatched: dispatched, ar_detail: detail, case_doc: caseDoc }) }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1712,
+          96
+        ],
+        "id": "ac3a1c89-932e-4cf6-9f00-0c9fe9b9f50b",
+        "name": "AR Enrich"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Decide whether this case warrants pulling the sample off the endpoint\nconst item = $input.first().json;\nconst oa = item.original_alert || {};\nconst od = oa.data || {};\nconst win = od.win || {};\nconst ed = win.eventdata || {};\nconst sys = od.syscheck || {};\nconst ack = od.ack || {};\nconst virustotal = od.virustotal || {};\nconst resources = od.resources || od.Resources || [];\n\n// Extract candidate paths from ALL possible fields\nconst candidates = [];\n\n// Standard Wazuh/Windows fields\nconst standard = [\n  ed.path, ed.targetFilename, ed.TargetFilename,\n  od.targetFilename, od.TargetFilename,\n  sys.path, sys.pathName,\n  (od.audit && od.audit.file && od.audit.file.path),\n  (ack.path), (ack.targetFileName), (ack.targetFilename),\n  (virustotal.meaningful_name),\n  (virustotal.malicious_file_path),\n  (virustotal.path)\n];\n\ncandidates.push(...standard.filter(x => x && typeof x === 'string'));\n\n// Defender resources: [\"file:_C:\\Users\\...\", \"containerfile:_...\", \"webfile:_...\"]\nif (resources.length) {\n  for (const r of resources) {\n    if (typeof r === 'string') {\n      // Strip Defender prefixes: file:_, containerfile:_, webfile:_\n      let clean = r.replace(/^(file:|containerfile:|webfile:)_/i, '');\n      // Extract Windows paths\n      const m = clean.match(/[A-Za-z]:\\\\[^\"\\s]+/g);\n      if (m) candidates.push(...m);\n      // Also grab bare paths\n      if (!m) candidates.push(clean);\n    }\n  }\n}\n\n// Also check case_doc if it already has a path\nif (item.case_doc && item.case_doc.sample_path) {\n  candidates.push(item.case_doc.sample_path);\n}\n\n// Deduplicate and score paths: prefer executables, avoid .crdownload/.tmp/.part\nconst seen = new Set();\nconst scored = [];\nfor (const c of candidates) {\n  if (!c || typeof c !== 'string') continue;\n  const norm = c.trim().replace(/^file:_/i, '').replace(/^containerfile:_/i, '').replace(/^webfile:_/i, '');\n  if (!norm || seen.has(norm)) continue;\n  seen.add(norm);\n  let score = 0;\n  if (/\\.(exe|dll|sys|bat|cmd|ps1|scr|com|pif|msi|jar|zip|rar|7z)$/i.test(norm)) score += 10;\n  if (/\\.(crdownload|tmp|part|temp|download)$/i.test(norm)) score -= 20;  // avoid partial downloads\n  if (/^[A-Za-z]:\\\\/.test(norm)) score += 5;  // absolute Windows path\n  if (norm.includes('mimikatz') || norm.includes('mimidrv') || norm.includes('mimilib')) score += 15;\n  scored.push({ path: norm, score });\n}\n\nscored.sort((a, b) => b.score - a.score);\nconst bestPath = scored.length ? scored[0].path : '';\n\n// Final check: does it look like a file?\nconst looksLikeFile = bestPath && (bestPath.includes('.') || bestPath.includes('\\\\'));\n\nconst wantsAnalysis = (item.tier3_verdict === 'Malicious') ||\n                      (item.tier3_verdict === 'Suspicious' && Number(item.final_score) >= 30);\n\nitem.case_doc = item.case_doc || {};\nif (wantsAnalysis && looksLikeFile) {\n  item.case_doc.needs_sample = true;\n  item.case_doc.sample_path = bestPath;\n  item.case_doc.sample_source = 'triage';\n  item.case_doc.sample_status = 'requested';\n  item.case_doc.all_candidates = scored.map(s => s.path).slice(0, 5);\n} else {\n  item.case_doc.needs_sample = false;\n  item.case_doc.sample_path = bestPath || '';\n  item.case_doc.sample_status = wantsAnalysis ? 'no-valid-path' : 'not-needed';\n  item.case_doc.all_candidates = scored.map(s => s.path).slice(0, 5);\n}\nitem.sample_path = item.case_doc.sample_path;\nitem.needs_sample = item.case_doc.needs_sample;\nreturn [{ json: item }];"
+        },
+        "id": "triage1",
+        "name": "Sample Triage",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -48,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 1
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "ns",
+                "leftValue": "={{ !!$('Sample Triage').first().json.needs_sample }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true"
+                }
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "iffetchm",
+        "name": "Sample Needed (M)?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          672,
+          -160
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://192.168.10.101:8765/stage",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ path: ($('Sample Triage').first().json.sample_path || ''), alert_id: String($('Sample Triage').first().json.case_doc.alert_id || '') }) }}",
+          "options": {
+            "allowUnauthorizedCerts": true,
+            "response": {
+              "response": {
+                "neverError": true
+              }
+            },
+            "headers": {
+              "X-Bridge-Key": "br_2f53e2bd8167a5abb23b59dfc8ba71a3"
+            }
+          }
+        },
+        "id": "reqsm",
+        "name": "Request Sample M",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          896,
+          -256
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 1
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "ns",
+                "leftValue": "={{ !!$('Sample Triage').first().json.needs_sample }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true"
+                }
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "iffetchs",
+        "name": "Sample Needed (S)?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          432,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://192.168.10.101:8765/stage",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ path: ($('Sample Triage').first().json.sample_path || ''), alert_id: String($('Sample Triage').first().json.case_doc.alert_id || '') }) }}",
+          "options": {
+            "allowUnauthorizedCerts": true,
+            "response": {
+              "response": {
+                "neverError": true
+              }
+            },
+            "headers": {
+              "X-Bridge-Key": "br_2f53e2bd8167a5abb23b59dfc8ba71a3"
+            }
+          }
+        },
+        "id": "reqss",
+        "name": "Request Sample S",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          672,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://192.168.10.101:55000/security/user/authenticate",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Basic REDACTED_BASIC_AUTH"
+              }
+            ]
+          },
+          "options": {
+            "allowUnauthorizedCerts": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1008,
+          400
+        ],
+        "name": "AR Auth S",
+        "id": "8b55d8c1-83b6-4212-ae08-5e504a0af2cd"
+      }
+    ],
+    "connections": {
+      "Webhook from Wazuh": {
+        "main": [
+          [
+            {
+              "node": "Extract IOCs",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP OpenRouter": {
+        "main": [
+          [
+            {
+              "node": "Scoring",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Scoring": {
+        "main": [
+          []
+        ]
+      },
+      "Switch": {
+        "main": [
+          [
+            {
+              "node": "http to wazuh index",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "AR Auth",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "http to wazuh index",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "AR Auth S",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Disposition": {
+        "main": [
+          [
+            {
+              "node": "http to wazuh index1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP openrouter": {
+        "main": [
+          [
+            {
+              "node": "Case File is pulled",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Case File is pulled": {
+        "main": [
+          []
+        ]
+      },
+      "Extract IOCs": {
+        "main": [
+          [
+            {
+              "node": "Get Wazuh Timeline",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "VirusTotal Lookup": {
+        "main": [
+          [
+            {
+              "node": "Merge Intel",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Intel": {
+        "main": [
+          [
+            {
+              "node": "Tier-3 Analyst Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Wazuh Timeline": {
+        "main": [
+          [
+            {
+              "node": "VirusTotal Lookup",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tier-3 Analyst Agent": {
+        "main": [
+          [
+            {
+              "node": "Parse & Score",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse & Score": {
+        "main": [
+          [
+            {
+              "node": "Sample Triage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AR Auth": {
+        "main": [
+          [
+            {
+              "node": "AR Quarantine",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AR Quarantine": {
+        "main": [
+          [
+            {
+              "node": "AR Enrich",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AR Enrich": {
+        "main": [
+          [
+            {
+              "node": "http to wazuh index",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Sample Needed (M)?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Sample Triage": {
+        "main": [
+          [
+            {
+              "node": "Switch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Sample Needed (M)?": {
+        "main": [
+          [
+            {
+              "node": "Request Sample M",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Sample Needed (S)?": {
+        "main": [
+          [
+            {
+              "node": "Request Sample S",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "AR Auth S": {
+        "main": [
+          [
+            {
+              "node": "Sample Needed (S)?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "http to wazuh index": {
+        "main": [
+          []
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "versionId": "45d08df9-a60d-4450-b999-d0a6dd1f82dd",
+    "activeVersionId": "45d08df9-a60d-4450-b999-d0a6dd1f82dd",
+    "versionCounter": 276,
+    "triggerCount": 1,
+    "sourceWorkflowId": null,
+    "tags": [
+      {
+        "updatedAt": "2026-08-14T12:12:34.632Z",
+        "createdAt": "2026-08-14T12:12:34.632Z",
+        "id": "gq2d8bLIMWt5aXvu",
+        "name": "Agentic Workflow"
+      }
+    ],
+    "shared": [
+      {
+        "updatedAt": "2026-08-14T12:12:36.587Z",
+        "createdAt": "2026-08-14T12:12:36.587Z",
+        "role": "workflow:owner",
+        "workflowId": "RlieZMswNK89cCYK",
+        "projectId": "87ItdxCcA09Q8ys1",
+        "project": {
+          "updatedAt": "2026-08-14T12:10:01.050Z",
+          "createdAt": "2026-08-14T12:07:53.860Z",
+          "id": "87ItdxCcA09Q8ys1",
+          "name": "Dev SOCG <admin@soc.local>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "91f7b47b-115f-4369-9d3b-aabaa43147ae"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Version d5bfc048",
+      "description": "auth change"
+    }
+  },
+  {
+    "updatedAt": "2026-08-15T10:48:54.115Z",
+    "createdAt": "2026-08-15T10:48:54.115Z",
+    "id": "1xUwgWJRATeOyD8i",
+    "name": "Akml",
+    "description": null,
+    "active": false,
+    "isArchived": false,
+    "nodes": [],
+    "connections": {},
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false
+    },
+    "staticData": null,
+    "meta": null,
+    "nodeGroups": [],
+    "pinData": {},
+    "versionId": "8eb9aa38-4aa0-4e2f-ac20-282c241de6de",
+    "activeVersionId": null,
+    "versionCounter": 1,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-08-15T10:48:54.117Z",
+        "createdAt": "2026-08-15T10:48:54.117Z",
+        "role": "workflow:owner",
+        "workflowId": "1xUwgWJRATeOyD8i",
+        "projectId": "87ItdxCcA09Q8ys1",
+        "project": {
+          "updatedAt": "2026-08-14T12:10:01.050Z",
+          "createdAt": "2026-08-14T12:07:53.860Z",
+          "id": "87ItdxCcA09Q8ys1",
+          "name": "Dev SOCG <admin@soc.local>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "91f7b47b-115f-4369-9d3b-aabaa43147ae"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": null,
+      "description": null
+    }
+  },
+  {
+    "updatedAt": "2026-08-26T00:27:33.776Z",
+    "createdAt": "2026-08-26T00:27:33.776Z",
+    "id": "yrkSampleIntake01",
+    "name": "YARAKIN Sample Intake",
+    "description": "Receives samples fetched from endpoints and runs YARAKIN forensic analysis",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "wh1",
+        "name": "Sample Upload",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -620,
+          0
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "yarakin-sample-intake",
+          "options": {}
+        },
+        "webhookId": "60017632-af41-4805-812b-5f602eddb977"
+      },
+      {
+        "id": "bin1",
+        "name": "Build Binary",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -380,
+          0
+        ],
+        "parameters": {
+          "jsCode": "const rawIn = $input.first().json;\nconst b = rawIn.body || rawIn;\nconst name = String(b.path || 'sample.bin').split('\\\\').pop();\nreturn [{ json: {\n    alert_id: b.alert_id || null,\n    path: b.path || 'unknown',\n    sha256: b.sha256 || '',\n    size: Number(b.size) || 0\n  }, binary: { data: {\n    data: b.data_b64,\n    mimeType: 'application/octet-stream',\n    fileName: name\n  } } }];"
+        }
+      },
+      {
+        "id": "sub1",
+        "name": "Submit to YARAKIN",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          -140,
+          0
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "http://192.168.10.101:8501/api/webhook/analyze",
+          "sendBody": true,
+          "contentType": "binaryData",
+          "inputDataFieldName": "data",
+          "options": {
+            "timeout": 60000
+          }
+        }
+      },
+      {
+        "id": "wait1",
+        "name": "Wait for Forge",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          100,
+          0
+        ],
+        "parameters": {
+          "resume": "timeInterval",
+          "amount": 60,
+          "unit": "seconds"
+        }
+      },
+      {
+        "id": "poll1",
+        "name": "Poll Result",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          340,
+          0
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "=http://192.168.10.101:8501/api/jobs/{{ $json.job }}/result",
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "doneq",
+        "name": "Analysis Done?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          580,
+          0
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose"
+            },
+            "combinator": "or",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ !!$json.results }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true"
+                }
+              },
+              {
+                "id": "c2",
+                "leftValue": "={{ $runIndex }}",
+                "rightValue": 15,
+                "operator": {
+                  "type": "number",
+                  "operation": "gte"
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "upd1",
+        "name": "Build Update",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          820,
+          -80
+        ],
+        "parameters": {
+          "jsCode": "const r = $input.first().json;\nconst res0 = (r.results && r.results[0]) || {};\nconst rule0 = ((r.rules && r.rules[0]) || {});\nconst done = r.status === 'completed' && r.results && r.results.length > 0;\nconst alertId = $('Build Binary').first().json.alert_id;\nconst upd = {\n  query: { term: { alert_id: alertId } },\n  script: {\n    source: \"ctx._source.sample_analyzed = true; ctx._source.yarakin_status = params.st; ctx._source.yarakin_verdict = params.v; ctx._source.yarakin_family = params.fam; ctx._source.yarakin_summary = params.sum; ctx._source.yarakin_rule_name = params.rn; ctx._source.yara_rule = params.yara; ctx._source.yarakin_report_url = params.pdf;\",\n    lang: \"painless\",\n    params: {\n      st: done ? 'completed' : 'timeout',\n      v: res0.verdict || null,\n      fam: res0.family || null,\n      sum: res0.summary || '',\n      rn: res0.rule_name || null,\n      yara: rule0.yara || null,\n      pdf: res0.report_pdf_url || null\n    }\n  }\n};\nreturn [{ json: { update_body: upd, alert_id: alertId } }];"
+        }
+      },
+      {
+        "id": "idx1",
+        "name": "Update Case Doc",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1060,
+          -80
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://192.168.10.101:9200/agentic-soc-cases/_update_by_query?conflicts=proceed&refresh=true",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.update_body || {}) }}",
+          "options": {
+            "allowUnauthorizedCerts": true
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Basic YWRtaW46U2VjcmV0UGFzc3dvcmQ="
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Sample Upload": {
+        "main": [
+          [
+            {
+              "node": "Build Binary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Binary": {
+        "main": [
+          [
+            {
+              "node": "Submit to YARAKIN",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Submit to YARAKIN": {
+        "main": [
+          [
+            {
+              "node": "Wait for Forge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait for Forge": {
+        "main": [
+          [
+            {
+              "node": "Poll Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Poll Result": {
+        "main": [
+          [
+            {
+              "node": "Analysis Done?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Analysis Done?": {
+        "main": [
+          [
+            {
+              "node": "Build Update",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Wait for Forge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Update": {
+        "main": [
+          [
+            {
+              "node": "Update Case Doc",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {},
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "nodeGroups": {},
+    "pinData": null,
+    "versionId": "49614e23-38ea-4171-b9cd-17194d41ea2a",
+    "activeVersionId": "49614e23-38ea-4171-b9cd-17194d41ea2a",
+    "versionCounter": 3,
+    "triggerCount": 1,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-08-26T00:27:33.776Z",
+        "createdAt": "2026-08-26T00:27:33.776Z",
+        "role": "workflow:owner",
+        "workflowId": "yrkSampleIntake01",
+        "projectId": "87ItdxCcA09Q8ys1",
+        "project": {
+          "updatedAt": "2026-08-14T12:10:01.050Z",
+          "createdAt": "2026-08-14T12:07:53.860Z",
+          "id": "87ItdxCcA09Q8ys1",
+          "name": "Dev SOCG <admin@soc.local>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "91f7b47b-115f-4369-9d3b-aabaa43147ae"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "YARAKIN Sample Intake",
+      "description": "v1"
+    }
+  }
+]
