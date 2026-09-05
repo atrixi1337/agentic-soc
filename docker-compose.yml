@@ -116,8 +116,8 @@ services:
       - INDEXER_USERNAME=admin
       - INDEXER_PASSWORD=${INDEXER_PASSWORD:-SecretPassword}
       - WAZUH_API_URL=https://wazuh.manager
-      - DASHBOARD_USERNAME=kibanaserver
-      - DASHBOARD_PASSWORD=kibanaserver
+      - DASHBOARD_USERNAME=admin
+      - DASHBOARD_PASSWORD=SecretPassword
       - API_USERNAME=${WAZUH_API_USER:-wazuh-wui}
       - API_PASSWORD=${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
     volumes:

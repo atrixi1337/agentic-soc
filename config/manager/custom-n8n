@@ -5,5 +5,5 @@ ALERT_FILE="$1"
 [ -z "$ALERT_FILE" ] && exit 1
 curl -s -X POST -H "Content-Type: application/json" \
   --data-binary @${ALERT_FILE} \
-  http://n8n:5678/webhook/soc-alert
+  http://n8n:5678/webhook/e1a80abd-e35b-45cb-958a-e57dad1e144b
 exit 0

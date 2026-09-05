@@ -16,8 +16,8 @@ RUN curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --dearmor -o /usr
     && rm -rf /var/lib/apt/lists/*
 
 # Enable auditd-based command monitoring + FIM via ossec.conf
-COPY endpoint/ossec.conf /var/ossec/etc/ossec.conf
-COPY endpoint/entrypoint.sh /entrypoint.sh
+COPY ossec.conf /var/ossec/etc/ossec.conf
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Sample "victim" directories to attack

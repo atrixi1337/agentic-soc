@@ -15,4 +15,4 @@ opensearch.hosts:
 opensearch.ssl.verificationMode: none
 opensearch.ssl.certificateAuthorities: /usr/share/wazuh-dashboard/certs/root-ca.pem
 opensearch.username: admin
-opensearch.password: ${INDEXER_PASSWORD:-SecretPassword}
+opensearch.password: SecretPassword

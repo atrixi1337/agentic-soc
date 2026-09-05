@@ -1,5 +1,4 @@
 # Wazuh dashboard app config (points at manager API by service name).
-# NOTE: keep a single `hosts:` key — a duplicate key crashes the dashboard app.
 hosts:
   - default:
       url: https://wazuh.manager
@@ -7,7 +6,6 @@ hosts:
       username: wazuh-wui
       password: MyS3cr37P450r.*-
       run_as: false
-hosts:
   - 1513629884013:
       url: https://wazuh.manager
       port: 55000
